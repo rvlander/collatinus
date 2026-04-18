@@ -1,4 +1,32 @@
-/*      lemCore.cpp  */
+/*                 lemCore.cpp
+ *
+ *  This file is part of COLLATINUS.
+ *
+ *  COLLATINUS is free software; you can redistribute it and/or modify
+ *  it under the terms of the GNU General Public License as published by
+ *  the Free Software Foundation; either version 2 of the License, or
+ *  (at your option) any later version.
+ *
+ *  COLLATINVS is distributed in the hope that it will be useful,
+ *  but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *  GNU General Public License for more details.
+ *
+ *  You should have received a copy of the GNU General Public License
+ *  along with COLLATINUS; if not, write to the Free Software
+ *  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+ *
+ * © Yves Ouvrard, 2009 - 2016
+ */
+
+/**
+ * \file lemCore.cpp
+ * \brief noyau pour la lemmatisation des formes latines
+ *
+ * C'est le cœur du programme !
+ * Cette classe est utilisée par les classes _intermédiaires_ (Lemmatiseur, Scandeur etc...)
+ * et gère les couches _profondes_ (Lemme, Modele etc...).
+ */
 
 #include "lemCore.h"
 #include "irregs.h"
@@ -9,6 +37,15 @@
 #include <regex>
 #include <cstring>
 
+/**
+ * \fn LemCore::LemCore (QObject *parent)
+ * \brief Constructeur de la classe LemCore.
+ *
+ * Il définit quelques constantes, initialise
+ * les options à false, et appelle les fonctions
+ * de lecture des données : modèles, lexique,
+ * traductions et irréguliers.
+ */
 // -------------------------------------------------------------------------
 // Constructor
 // -------------------------------------------------------------------------
@@ -284,6 +321,9 @@ int LemCore::aRomano(const std::string &f)
 // -------------------------------------------------------------------------
 // ajDesinence
 // -------------------------------------------------------------------------
+/**
+ * \brief Ajoute la désinence d à la liste des désinences du noyau.
+ */
 void LemCore::ajDesinence(Desinence *d)
 {
     _desinences.insert({Ch::deramise(d->gr()), d});
@@ -292,6 +332,9 @@ void LemCore::ajDesinence(Desinence *d)
 // -------------------------------------------------------------------------
 // estRomain
 // -------------------------------------------------------------------------
+/**
+ * \brief Renvoie true si f est un nombre romain (composé uniquement de IUXLCDM).
+ */
 bool LemCore::estRomain(const std::string &f)
 {
     if (f.empty()) return false;
@@ -304,6 +347,9 @@ bool LemCore::estRomain(const std::string &f)
 // -------------------------------------------------------------------------
 // ajRadicaux
 // -------------------------------------------------------------------------
+/**
+ * \brief Ajoute tous les radicaux du lemme l à la liste des radicaux du noyau.
+ */
 void LemCore::ajRadicaux(Lemme *l)
 {
     Modele *m = modele(l->grModele());
@@ -396,7 +442,7 @@ std::string LemCore::decontracte(const std::string &din)
 }
 
 // -------------------------------------------------------------------------
-// inconnue
+// inconnue  — tente d'identifier une forme inconnue
 // -------------------------------------------------------------------------
 ModLem LemCore::inconnue(const std::string &f)
 {
@@ -473,7 +519,7 @@ MapLem LemCore::lemmatise(const std::string &f)
                 result[irr->lemme()].insert(result[irr->lemme()].begin(), sl);
             }
 
-    // radical + désinence
+    // radical + désinence : on découpe la forme en (radical, désinence)
     for (size_t i = 0; i <= fd.size(); ++i) {
         std::string r = fd.substr(0, i);
         std::string d = fd.substr(i);
@@ -699,7 +745,7 @@ std::vector<std::string> LemCore::lemmes(MapLem lm)
 }
 
 // -------------------------------------------------------------------------
-// lisIrreguliers
+// lisIrreguliers  — lit le fichier irregs.la et crée les objets Irreg
 // -------------------------------------------------------------------------
 void LemCore::lisIrreguliers()
 {
@@ -714,7 +760,7 @@ void LemCore::lisIrreguliers()
 }
 
 // -------------------------------------------------------------------------
-// lisFichierLexique
+// lisFichierLexique  — lit un fichier de lexique et crée les objets Lemme
 // -------------------------------------------------------------------------
 void LemCore::lisFichierLexique(const std::string &filepath)
 {
@@ -753,7 +799,7 @@ void LemCore::lisModeles()
 }
 
 // -------------------------------------------------------------------------
-// lisTransfMed
+// lisTransfMed  — lit le fichier medieval.txt et construit les règles de transformation
 // -------------------------------------------------------------------------
 void LemCore::lisTransfMed()
 {
@@ -768,7 +814,8 @@ void LemCore::lisTransfMed()
 }
 
 // -------------------------------------------------------------------------
-// transfMed
+// transfMed  — transforme une graphie médiévale en graphie classique
+// Exactement comme parPos, mais pour les transformations médiévales.
 // -------------------------------------------------------------------------
 std::string LemCore::transfMed(const std::string &fin, bool rad)
 {
@@ -789,7 +836,7 @@ std::string LemCore::transfMed(const std::string &fin, bool rad)
 }
 
 // -------------------------------------------------------------------------
-// lisTraductions
+// lisTraductions  — lit les fichiers de traductions et remplit les lemmes
 // -------------------------------------------------------------------------
 void LemCore::lisTraductions(bool base, bool extension)
 {

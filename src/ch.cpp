@@ -1,4 +1,30 @@
-/*      ch.cpp  */
+/*      ch.cpp
+ *
+ *  This file is part of COLLATINUS.
+ *
+ *  COLLATINUS is free software; you can redistribute it and/or modify
+ *  it under the terms of the GNU General Public License as published by
+ *  the Free Software Foundation; either version 2 of the License, or
+ *  (at your option) any later version.
+ *
+ *  COLLATINVS is distributed in the hope that it will be useful,
+ *  but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *  GNU General Public License for more details.
+ *
+ *  You should have received a copy of the GNU General Public License
+ *  along with COLLATINUS; if not, write to the Free Software
+ *  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+ *
+ * © Yves Ouvrard, 2009 - 2016
+ */
+
+/**
+ * \file ch.cpp
+ * \brief constantes et utilitaires de traitement
+ *        des chaînes de caractères
+ *
+ */
 
 #include "ch.h"
 #include <algorithm>
@@ -24,6 +50,10 @@ static int countOcc(const std::string &s, const std::string &sub)
     return n;
 }
 
+/**
+ * \fn Ch::ajoute (QString mot, QStringList liste)
+ * \brief Ajoute mot au début de chaque item de liste.
+ */
 // ---------------------------------------------------------------------------
 // Ch::ajoute
 // ---------------------------------------------------------------------------
@@ -34,6 +64,11 @@ std::vector<std::string> Ch::ajoute(const std::string &mot,
     return liste;
 }
 
+/**
+ * \fn Ch::allonge(QString *f)
+ * \brief modifie f pour que sa dernière voyelle
+ *        devienne longue.
+ */
 // ---------------------------------------------------------------------------
 // Ch::allonge  — lengthens the last vowel of *f before a consonant
 // Replaces patterns like: (a|ă)(cons)$ -> ā\1  etc.
@@ -104,6 +139,12 @@ void Ch::allonge(std::string *f)
     }
 }
 
+/**
+ * \fn Ch:atone(QString a, bool bdc)
+ * \brief supprime tous les diacritiques de la chaîne a
+ *        si bdc est à true, les diacritiques des majuscules
+ *        sont également supprimés.
+ */
 // ---------------------------------------------------------------------------
 // Ch::atone  — strip all diacritics (macron, breve) from the string
 // ---------------------------------------------------------------------------
@@ -145,6 +186,10 @@ std::string Ch::atone(const std::string &a, bool bdc)
     return s;
 }
 
+/**
+ * \fn Ch:communes(QString g)
+ * \brief note comme communes toutes les voyelles qui ne portent pas de quantité.
+ */
 // ---------------------------------------------------------------------------
 // Ch::communes  — mark vowels without quantity as communes (ā̆, ē̆, …)
 // Combining breve U+0306 = \xCC\x86
@@ -217,6 +262,12 @@ std::string Ch::communes(const std::string &gin)
     return r;
 }
 
+/**
+ * \fn Ch::deQuant(QString *c)
+ * \brief utilisée en cas d'élision.
+ * supprime la quantité de la voyelle finale de la chaine c
+ * lorsque cette voyelle est en fin de mot ou suivie d'un "m".
+ */
 // ---------------------------------------------------------------------------
 // Ch::deQuant  — remove quantity from last vowel (used in elision)
 // ---------------------------------------------------------------------------
@@ -253,6 +304,10 @@ void Ch::deQuant(std::string *c)
     }
 }
 
+/**
+ * \fn Ch::deAccent(QString *c)
+ * \brief Supprime tous les accents d'un texte (acute, macron, breve)
+ */
 // ---------------------------------------------------------------------------
 // Ch::deAccent  — remove all accent/diacritic combining marks
 // (simplified: direct table of composed → base)
@@ -287,6 +342,13 @@ std::string Ch::deAccent(const std::string &cin)
     return c;
 }
 
+/**
+ * \fn QString Ch::deramise(QString r)
+ * \brief retourne une graphie non-ramiste
+ *        de r, càd dont tous les j deviennent i,
+ *        et tous les v deviennent u. Les V majuscules
+ *        sont ignorés.
+ */
 // ---------------------------------------------------------------------------
 // Ch::deramise
 // ---------------------------------------------------------------------------
@@ -307,6 +369,10 @@ std::string Ch::deramise(const std::string &rin)
     return r;
 }
 
+/**
+ * \fn Ch::elide(QString *mp)
+ * \brief met entre crochets la dernière syllabe de mp.
+ */
 // ---------------------------------------------------------------------------
 // Ch::elide
 // ---------------------------------------------------------------------------
@@ -365,6 +431,11 @@ void Ch::genStrNum(const std::string &s, std::string *ch, int *n)
     }
 }
 
+/**
+ * \fn Ch::sort_i(const QString &a, const QString &b)
+ * \brief compare a et b sans tenir compte des diacritiques ni de la casse.
+ * \return true si a < b.
+ */
 // ---------------------------------------------------------------------------
 // Ch::sort_i / inv_sort_i
 // ---------------------------------------------------------------------------
@@ -375,6 +446,12 @@ bool Ch::sort_i(const std::string &a, const std::string &b)
     return la < lb;
 }
 
+/**
+ * \fn Ch::inv_sort_i(const QString &a, const QString &b)
+ * \brief compare a et b sans tenir compte des diacritiques ni de la casse.
+ * \return true si a > b.
+ * Utilisée pour ranger les mots en fontions des fréquences descendantes
+ */
 bool Ch::inv_sort_i(const std::string &a, const std::string &b)
 {
     std::string la = toLower(atone(a));
@@ -382,6 +459,11 @@ bool Ch::inv_sort_i(const std::string &a, const std::string &b)
     return la > lb;
 }
 
+/**
+ * \fn Ch::versPC(QString k)
+ * \brief Comme versPedeCerto, mais ici le mot n'a pas été trouvé.
+ *        Les voyelles ne sont pas marquées sauf par position...
+ */
 // ---------------------------------------------------------------------------
 // Ch::versPC
 // ---------------------------------------------------------------------------
@@ -404,6 +486,11 @@ std::string Ch::versPC(const std::string &kin)
     return versPedeCerto(k);
 }
 
+/**
+ * \fn Ch::versPedeCerto(QString k)
+ * \brief remplace les longues de k par +, les brèves par - et les communes par
+ * *
+ */
 // ---------------------------------------------------------------------------
 // Ch::versPedeCerto
 // ---------------------------------------------------------------------------
@@ -516,6 +603,8 @@ std::string Ch::accentue(const std::string &l)
 // ---------------------------------------------------------------------------
 // Ch::ajoutSuff
 // In the transformed string all chars are ASCII except separSyll (\xC2\xB7, 2 bytes).
+// Sans suffixe, l'accent est sur l'avant-dernière voyelle si elle n'est pas brève.
+// Avec suffixe, l'accent est sur la dernière (avant collage).
 // We use an internal 1-byte marker (0x01) for separSyll during processing,
 // then replace back at the end.
 // ---------------------------------------------------------------------------

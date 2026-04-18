@@ -1,4 +1,23 @@
-/*      lemmatiseur.cpp  */
+/*      lemmatiseur.cpp
+ *
+ *  This file is part of COLLATINUS.
+ *
+ *  COLLATINUS is free software; you can redistribute it and/or modify
+ *  it under the terms of the GNU General Public License as published by
+ *  the Free Software Foundation; either version 2 of the License, or
+ *  (at your option) any later version.
+ *
+ *  COLLATINVS is distributed in the hope that it will be useful,
+ *  but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *  GNU General Public License for more details.
+ *
+ *  You should have received a copy of the GNU General Public License
+ *  along with COLLATINUS; if not, write to the Free Software
+ *  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+ *
+ * © Yves Ouvrard, 2009 - 2016
+ */
 
 #include "lemmatiseur.h"
 #include "lemme.h"
@@ -80,6 +99,12 @@ Lemmatiseur::Lemmatiseur(LemCore *l, const std::string &cible,
         setCible("fr en es");
 }
 
+/**
+ * \fn QStringList Lemmat::lemmatiseF (QString f, bool deb)
+ * \brief Lemmatise la chaîne f, sans tenir compte des majuscules
+ *        si deb (= début de phrase) est à true, et renvoie le
+ *        résultat dans une liste.
+ */
 // ---------------------------------------------------------------------------
 // lemmatiseF
 // ---------------------------------------------------------------------------
@@ -92,6 +117,12 @@ std::vector<std::string> Lemmatiseur::lemmatiseF(const std::string &f, bool deb)
     return res;
 }
 
+/**
+ * \fn QStringList Lemmat::frequences (QString txt)
+ * \brief Lemmatise txt et renvoie le résultat accompagné
+ *        d'informations sur la fréquence d'emploi de
+ *        chaque lemme.
+ */
 // ---------------------------------------------------------------------------
 // frequences
 // ---------------------------------------------------------------------------
@@ -258,6 +289,31 @@ std::string Lemmatiseur::lemmatiseT(std::string &t)
     return lemmatiseT(t, _alpha, _formeT, _morpho, _nonRec);
 }
 
+/**
+ * \fn QString Lemmatiseur::lemmatiseT (QString &t,
+ *  						   bool alpha,
+ *  						   bool cumVocibus,
+ *  						   bool cumMorpho,
+ *  						   bool nreconnu)
+ * \brief Renvoie sous forme de chaîne la lemmatisation
+ *        et la morphologie de chaque mot du texte t.
+ *        Les paramètres permettent de classer la sortie
+ *        par ordre alphabétique ; de reproduire la
+ *        forme du texte au début de chaque lemmatisation ;
+ *        de donner les morphologies de chaque forme ; ou
+ *        de rejeter les échecs en fin de liste. D'autres
+ *        paramètres, comme le format de sortie txt ou html,
+ *        sont donnés par des variables de classe.
+ *	      Les paramètres et options true outrepassent les false,
+ *        _majPert et _html sont dans les options de la classe.
+ *
+ *        Par effet de bord, la fonction modifie le texte
+ *        t, passé par adresse dans le paramètre &t, en
+ *        tenant compte de la liste des mots connus définie
+ *        par l'utilisateur via l'option
+ *        Fichier/Lire une liste de mots connus.
+ *
+ */
 // ---------------------------------------------------------------------------
 // lemmatiseT (full version)
 // ---------------------------------------------------------------------------
@@ -501,7 +557,7 @@ std::string Lemmatiseur::lemmatiseT(std::string &t, bool alpha, bool cumVocibus,
                 }
             }
         }
-    } // end main loop
+    }  // fin de boucle de lemmatisation pour chaque mot
 
     if (alpha) {
         removeDuplicates(lsv);
@@ -549,6 +605,16 @@ std::string Lemmatiseur::lemmatiseT(std::string &t, bool alpha, bool cumVocibus,
     return join(lRet, "");
 }
 
+/**
+ * \fn QString Lemmatiseur::lemmatiseFichier (QString f,
+ *								  bool alpha,
+ *								  bool cumVocibus,
+ *								  bool cumMorpho,
+ *								  bool nreconnu)
+ * \brief Applique lemmatiseT sur le contenu du fichier
+ *        f et renvoie le résultat. Les paramètres sont
+ *        les mêmes que ceux de lemmatiseT.
+ */
 // ---------------------------------------------------------------------------
 // lemmatiseFichier
 // ---------------------------------------------------------------------------
@@ -618,24 +684,82 @@ void Lemmatiseur::verbaOut(const std::string &fichier)
 // ---------------------------------------------------------------------------
 // Option accessors
 // ---------------------------------------------------------------------------
+/**
+ * \fn bool Lemmatiseur::optAlpha()
+ * \brief Accesseur de l'option alpha, qui
+ *        permet de fournir par défaut des résultats dans
+ *        l'ordre alphabétique.
+ */
 bool        Lemmatiseur::optAlpha()  { return _alpha;   }
+/**
+ * \fn bool Lemmatiseur::optHtml()
+ * \brief Accesseur de l'option html, qui
+ *        permet de renvoyer les résultats au format html.
+ */
 bool        Lemmatiseur::optHtml()   { return _html;    }
+/**
+ * \fn bool Lemmatiseur::optFormeT()
+ * \brief Accesseur de l'option formeT,
+ *        qui donne en tête de lemmatisation
+ *        la forme qui a été analysée.
+ */
 bool        Lemmatiseur::optFormeT() { return _formeT;  }
+/**
+ * \fn bool Lemmatiseur::optMajPert()
+ * \brief Accesseur de l'option majPert,
+ *        qui permet de tenir compte des majuscules
+ *        dans la lemmatisation.
+ */
 bool        Lemmatiseur::optMajPert(){ return _majPert; }
+/**
+ * \fn bool Lemmatiseur::optMorpho()
+ * \brief Accesseur de l'option morpho,
+ *        qui donne l'analyse morphologique
+ *        des formes lemmatisées.
+ */
 bool        Lemmatiseur::optMorpho() { return _morpho;  }
 bool        Lemmatiseur::optNonRec() { return _nonRec;  }
+/**
+ * \fn QString Lemmatiseur::cible()
+ * \brief Renvoie la langue cible dans sa forme
+ *        abrégée (fr, en, de, it, etc.).
+ */
 std::string Lemmatiseur::cible()     { return _cible;   }
 
 // ---------------------------------------------------------------------------
 // Option mutators
 // ---------------------------------------------------------------------------
+/**
+ * \fn void Lemmatiseur::setAlpha (bool a)
+ * \brief Modificateur de l'option alpha.
+ */
 void Lemmatiseur::setAlpha(bool a)              { _alpha = a; }
+/**
+ * \fn void Lemmatiseur::setHtml (bool h)
+ * \brief Modificateur de l'option html.
+ */
 void Lemmatiseur::setHtml(bool h)               { _html = h; }
+/**
+ * \fn void Lemmatiseur::setFormeT (bool f)
+ * \brief Modificateur de l'option formeT.
+ */
 void Lemmatiseur::setFormeT(bool f)             { _formeT = f; }
+/**
+ * \fn void Lemmatiseur::setMajPert (bool mp)
+ * \brief Modificateur de l'option majpert.
+ */
 void Lemmatiseur::setMajPert(bool mp)           { _majPert = mp; }
+/**
+ * \fn void Lemmatiseur::setMorpho (bool m)
+ * \brief Modificateur de l'option morpho.
+ */
 void Lemmatiseur::setMorpho(bool m)             { _morpho = m; }
 void Lemmatiseur::setNonRec(bool n)             { _nonRec = n; }
 
+/**
+ * \fn void Lemmatiseur::setCible(QString c)
+ * \brief Permet de changer la langue cible.
+ */
 void Lemmatiseur::setCible(const std::string &c)
 {
     _cible = c;
