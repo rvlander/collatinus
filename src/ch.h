@@ -3,47 +3,46 @@
 #ifndef CH_H
 #define CH_H
 
-#include <QRegExp>
-#include <QString>
-#include <QStringList>
+#include <string>
+#include <vector>
+#include "string_utils.h"
 
 namespace Ch
 {
-/* Je passe à une liste d'abréviations contenue dans un fichier.
-QStringList const abrev  = QStringList()
-    <<"Agr"<<"Ap"<<"A"<<"K"<<"D"<<"F"<<"C"
-    <<"Cn"<<"Kal"<<"L"<<"Mam"<<"M\""<<"M"<<"N"<<"Oct"
-    <<"Opet"<<"Post"<<"Pro"<<"P"<<"Q"<<"Sert"
-    <<"Ser"<<"Sex"<<"S"<<"St"<<"Ti"<<"T"<<"V"
-    <<"Vol"<<"Vop"<<"Pl";
-// Liste des abréviations prise dans Praelector le 11/11/2016
-*/
-QStringList ajoute(QString mot, QStringList liste);
-void allonge(QString *f);
-QString atone(const QString a, bool bdc = false);
-QString communes(QString g);
-void deQuant(QString *c);
-QString const consonnes = "bcdfgjklmnpqrstvxz";
-void genStrNum(const QString s, QString *ch, int *n);
-QString deramise(QString r);
-QString deAccent(QString c);
-void elide(QString *mp);
-const QRegExp reAlphas("(\\w+)");
-const QRegExp reEspace("\\s+");
-const QRegExp reLettres("\\w");
-const QRegExp rePonct("([\\.?!;:])");
-// const QRegExp rePonct("([\\.?!;:]|$$)");
-bool sort_i(const QString &a, const QString &b);
-bool inv_sort_i(const QString &a, const QString &b);
-QString versPC(QString k);
-QString versPedeCerto(QString k);
-QString const voyelles = "āăēĕīĭōŏūŭȳўĀĂĒĔĪĬŌŎŪŬȲЎ";
+std::vector<std::string> ajoute(const std::string &mot, std::vector<std::string> liste);
+void allonge(std::string *f);
+std::string atone(const std::string &a, bool bdc = false);
+std::string communes(const std::string &g);
+void deQuant(std::string *c);
+const std::string consonnes = "bcdfgjklmnpqrstvxz";
+void genStrNum(const std::string &s, std::string *ch, int *n);
+std::string deramise(const std::string &r);
+std::string deAccent(const std::string &c);
+void elide(std::string *mp);
+bool sort_i(const std::string &a, const std::string &b);
+bool inv_sort_i(const std::string &a, const std::string &b);
+std::string versPC(const std::string &k);
+std::string versPedeCerto(const std::string &k);
+// U+00B7 MIDDLE DOT in UTF-8
+const std::string separSyll = "\xC2\xB7";
+// String of long/short vowels (UTF-8): āăēĕīĭōŏūŭȳўĀĂĒĔĪĬŌŎŪŬȲЎ
+const std::string voyelles =
+    "\xC4\x81\xC4\x83"  // ā ă
+    "\xC4\x93\xC4\x95"  // ē ĕ
+    "\xC4\xAB\xC4\xAD"  // ī ĭ
+    "\xC5\x8D\xC5\x8F"  // ō ŏ
+    "\xC5\xAB\xC5\xAD"  // ū ŭ
+    "\xC8\xB3\xD1\x9E"  // ȳ ў
+    "\xC4\x80\xC4\x82"  // Ā Ă
+    "\xC4\x92\xC4\x94"  // Ē Ĕ
+    "\xC4\xAA\xC4\xAC"  // Ī Ĭ
+    "\xC5\x8C\xC5\x8E"  // Ō Ŏ
+    "\xC5\xAA\xC5\xAC"  // Ū Ŭ
+    "\xC8\xB2\xD0\x8E"; // Ȳ Ў
+std::string transforme(const std::string &k);
+std::string accentue(const std::string &l);
+std::string ajoutSuff(const std::string &fq, const std::string &suffixe,
+                      const std::string &l_etym, int accent);
+} // namespace Ch
 
-//QChar const separSyll = 0x02CC;
-//QChar const separSyll = 0x00AD;
-QChar const separSyll = 0x00B7;
-QString transforme(QString k);
-QString accentue(QString l);
-QString ajoutSuff(QString fq, QString suffixe, QString l_etym, int accent);
-}
 #endif
