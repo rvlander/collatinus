@@ -373,8 +373,8 @@ void LemCore::ajRadicaux(Lemme *l)
                 int oter = toInt(section(gen, ',', 0, 0));
                 std::string ajouter = section(gen, ',', 1, 1);
                 if (endsWith(gc, "\xCC\x86")) gc.erase(gc.size()-2); // drop combining breve
-                if (oter > 0 && (int)gc.size() >= oter)
-                    gc.erase(gc.size() - oter);
+                if (oter > 0)
+                    utf8Chop(gc, oter);
                 if (ajouter != "0") gc += ajouter;
                 r = new Radical(gc, i, l);
             }

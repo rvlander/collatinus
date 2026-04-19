@@ -23,6 +23,15 @@ inline size_t utf8LastCharPos(const std::string &s) {
     return i;
 }
 
+// Remove n codepoints from the end of a UTF-8 string (safe chop)
+inline void utf8Chop(std::string &s, int n) {
+    for (int k = 0; k < n && !s.empty(); ++k) {
+        size_t pos = s.size() - 1;
+        while (pos > 0 && ((unsigned char)s[pos] & 0xC0) == 0x80) --pos;
+        s.erase(pos);
+    }
+}
+
 // Byte length of the codepoint starting at pos
 inline size_t utf8CharLenAt(const std::string &s, size_t pos) {
     if (pos >= s.size()) return 0;
