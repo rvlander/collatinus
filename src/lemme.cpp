@@ -159,9 +159,7 @@ Lemme::Lemme(const std::string &linea, int origin)
 
 void Lemme::setLemCore(LemCore *l)
 {
-    if (_lemCore == nullptr) _lemCore = l;
-    // Je n'autorise qu'une seule mise à jour de _lemCore :
-    // quand le vrai LemCore est créé.
+    _lemCore = l;
 }
 
 /**

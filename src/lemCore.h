@@ -185,7 +185,7 @@ class LemCore
     bool _extLoaded;
 
    public:
-    explicit LemCore(const std::string &resDir = "");
+    explicit LemCore(const std::string &resDir = "", const std::string &cible = "fr en es");
     void setResourceDir(const std::string &path);
     bool estAbr(const std::string &m);
     void ajDesinence(Desinence *d);

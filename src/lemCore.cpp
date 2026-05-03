@@ -49,7 +49,7 @@
 // -------------------------------------------------------------------------
 // Constructor
 // -------------------------------------------------------------------------
-LemCore::LemCore(const std::string &resDir)
+LemCore::LemCore(const std::string &resDir, const std::string &cible)
 {
     Lemme::setLemCore(this);
     setResourceDir(resDir);
@@ -57,7 +57,7 @@ LemCore::LemCore(const std::string &resDir)
     _extension = false;
     _extLoaded = false;
     _medieval  = false;
-    _cible     = "fr en es";
+    _cible     = cible;
 
     suffixes["ne"]  = "n\xC4\x95";   // nĕ
     suffixes["que"] = "qu\xC4\x95";  // quĕ
@@ -859,6 +859,11 @@ void LemCore::lisTraductions(bool base, bool extension)
 
     for (auto &nfl : files) {
         std::string suff = fileExtension(nfl);
+        // Always load fr and en (hardcoded fallbacks in Lemme::traduction()).
+        // Load any other language only if its code appears in _cible.
+        if (suff != "fr" && suff != "en" &&
+            _cible.find(suff) == std::string::npos)
+            continue;
         auto lignes = lignesFichier(_resDir + nfl);
         if (lignes.empty()) continue;
         if (base && startsWith(nfl, "lemmes.")) {
