@@ -34,6 +34,25 @@ Starting from a lemma and its associated flexional endings, Collatinus is also c
 
 Finally, when syllable quantities are known for a given lemma, Collatinus can scan the word and even the entire text. When scanning a text, Collatinus applies the usual rules of elision and hiatus.
 
+## Running Tests
+
+The core lemmatization files are Qt-free and can be tested standalone. Requires a C++11 compiler (`g++` or `clang++`).
+
+```bash
+cd tests
+make          # build both test binaries
+./test_ch     # unit tests for Ch::atone() — UTF-8 diacritic stripping
+./test_lemcore  # unit tests for LemCore translation loading
+```
+
+Both binaries exit 0 on success and print a summary line (`N passed, 0 failed`).
+
+To rebuild from scratch:
+
+```bash
+cd tests && make clean && make
+```
+
 ## Licence
 
 Collatinus is developed and maintained by Yves Ouvrard and Philippe Verkerk. It is made available under the [GNU GPL v3](http://www.gnu.org/licenses/gpl.html) licence.
