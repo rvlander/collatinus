@@ -150,40 +150,92 @@ void Ch::allonge(std::string *f)
 // ---------------------------------------------------------------------------
 std::string Ch::atone(const std::string &a, bool bdc)
 {
-    std::string s = a;
-    // minuscules
-    s = replaceAll(s, "\xC4\x81", "a");   // ā
-    s = replaceAll(s, "\xC4\x83", "a");   // ă
-    s = replaceAll(s, "\xC4\x93", "e");   // ē
-    s = replaceAll(s, "\xC4\x95", "e");   // ĕ
-    s = replaceAll(s, "\xC4\xAB", "i");   // ī
-    s = replaceAll(s, "\xC4\xAD", "i");   // ĭ
-    s = replaceAll(s, "\xC5\x8D", "o");   // ō
-    s = replaceAll(s, "\xC5\x8F", "o");   // ŏ
-    s = replaceAll(s, "\xC5\xAB", "u");   // ū
-    s = replaceAll(s, "\xC5\xAD", "u");   // ŭ
-    s = replaceAll(s, "\xC8\xB3", "y");   // ȳ (U+0233)
-    s = replaceAll(s, "\xD1\x9E", "y");   // ў (U+045E)
-    if (!bdc) {
-        // majuscules
-        s = replaceAll(s, "\xC4\x80", "A");  // Ā
-        s = replaceAll(s, "\xC4\x82", "A");  // Ă
-        s = replaceAll(s, "\xC4\x92", "E");  // Ē
-        s = replaceAll(s, "\xC4\x94", "E");  // Ĕ
-        s = replaceAll(s, "\xC4\xAA", "I");  // Ī
-        s = replaceAll(s, "\xC4\xAC", "I");  // Ĭ
-        s = replaceAll(s, "\xC5\x8C", "O");  // Ō
-        s = replaceAll(s, "\xC5\x8E", "O");  // Ŏ
-        s = replaceAll(s, "\xC5\xAA", "U");  // Ū
-        s = replaceAll(s, "\xC5\xAC", "U");  // Ŭ
-        s = replaceAll(s, "\xC8\xB2", "Y");  // Ȳ (U+0232)
-        s = replaceAll(s, "\xD0\x8E", "Y");  // Ў (U+040E)
+    std::string r;
+    r.reserve(a.size());
+    const unsigned char *p   = reinterpret_cast<const unsigned char *>(a.data());
+    const unsigned char *end = p + a.size();
+
+    while (p < end) {
+        unsigned char b0 = p[0];
+
+        // 3-byte: ụ U+1EE5 (E1 BB A5) → u
+        if (b0 == 0xE1 && p + 2 < end && p[1] == 0xBB && p[2] == 0xA5) {
+            r += 'u';
+            p += 3;
+            continue;
+        }
+
+        // 2-byte: combining breve U+0306 (CC 86) → drop both bytes
+        if (b0 == 0xCC && p + 1 < end && p[1] == 0x86) {
+            p += 2;
+            continue;
+        }
+
+        // 2-byte diacritics
+        if (p + 1 < end) {
+            unsigned char b1 = p[1];
+            char rep    = 0;
+            bool upper  = false;
+
+            if (b0 == 0xC4) {
+                switch (b1) {
+                    case 0x80: upper = true;  rep = 'A'; break; // Ā
+                    case 0x81:                rep = 'a'; break; // ā
+                    case 0x82: upper = true;  rep = 'A'; break; // Ă
+                    case 0x83:                rep = 'a'; break; // ă
+                    case 0x92: upper = true;  rep = 'E'; break; // Ē
+                    case 0x93:                rep = 'e'; break; // ē
+                    case 0x94: upper = true;  rep = 'E'; break; // Ĕ
+                    case 0x95:                rep = 'e'; break; // ĕ
+                    case 0xAA: upper = true;  rep = 'I'; break; // Ī
+                    case 0xAB:                rep = 'i'; break; // ī
+                    case 0xAC: upper = true;  rep = 'I'; break; // Ĭ
+                    case 0xAD:                rep = 'i'; break; // ĭ
+                    case 0xB1:                rep = 'i'; break; // ı U+0131 (not uppercase)
+                    default: break;
+                }
+            } else if (b0 == 0xC5) {
+                switch (b1) {
+                    case 0x8C: upper = true;  rep = 'O'; break; // Ō
+                    case 0x8D:                rep = 'o'; break; // ō
+                    case 0x8E: upper = true;  rep = 'O'; break; // Ŏ
+                    case 0x8F:                rep = 'o'; break; // ŏ
+                    case 0xAA: upper = true;  rep = 'U'; break; // Ū
+                    case 0xAB:                rep = 'u'; break; // ū
+                    case 0xAC: upper = true;  rep = 'U'; break; // Ŭ
+                    case 0xAD:                rep = 'u'; break; // ŭ
+                    default: break;
+                }
+            } else if (b0 == 0xC8) {
+                switch (b1) {
+                    case 0xB2: upper = true;  rep = 'Y'; break; // Ȳ U+0232
+                    case 0xB3:                rep = 'y'; break; // ȳ U+0233
+                    default: break;
+                }
+            } else if (b0 == 0xD0) {
+                if (b1 == 0x8E) { upper = true; rep = 'Y'; } // Ў U+040E
+            } else if (b0 == 0xD1) {
+                if (b1 == 0x9E) { rep = 'y'; }               // ў U+045E
+            }
+
+            if (rep != 0) {
+                if (upper && bdc) {
+                    // Keep uppercase diacritic bytes unchanged
+                    r += static_cast<char>(b0);
+                    r += static_cast<char>(b1);
+                } else {
+                    r += rep;
+                }
+                p += 2;
+                continue;
+            }
+        }
+
+        // Default: copy byte as-is
+        r += static_cast<char>(b0);
+        ++p;
     }
-    s = replaceAll(s, "\xC4\xB1", "i");   // ı (U+0131)
-    s = replaceAll(s, "\xE1\xBB\xA5", "u"); // ụ (U+1EE5)
-    // combining breve U+0306 = 0xCC 0x86
-    s = replaceAll(s, "\xCC\x86", "");
-    return s;
+    return r;
 }
 
 /**
