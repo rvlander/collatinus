@@ -40,7 +40,7 @@ static std::vector<std::string> splitWordBoundary(const std::string &s)
     // Match sequences of Latin letters (ASCII + extended Latin U+00C0-U+024F)
     // encoded as UTF-8.  We match on raw bytes; non-ASCII lead bytes in the
     // range C3-C9 followed by 80-BF cover U+00C0-U+024F.
-    std::regex wordRe("[A-Za-z]+|(?:[\xC3-\xC9][\x80-\xBF])+");
+    std::regex wordRe("(?:[A-Za-z]|[\xC3-\xC9][\x80-\xBF])+");
     auto it  = std::sregex_iterator(s.begin(), s.end(), wordRe);
     auto end = std::sregex_iterator();
     size_t pos = 0;

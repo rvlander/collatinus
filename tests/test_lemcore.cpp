@@ -67,5 +67,26 @@ int main()
         }
     }
 
+    // --- Test 6: dextrō (macron on o = \xC5\x8D) — must find dexter, not crash ---
+    // Without the fix this caused infinite recursion (stack overflow): splitWordBoundary
+    // split "dextrō" into ASCII "dextr" + bare ō byte-pair, and lemmatiseM(\xC5\x8D)
+    // looped forever via toLower/toUpper byte corruption.
+    {
+        LemCore lc(RES, "fr");
+        MapLem r = lc.lemmatiseM("dextr\xC5\x8D", true);   // dextrō
+        CHECK(!r.empty(), "dextr\xC5\x8D (dextrō): at least one result (no crash)");
+        bool found_dexter = false;
+        for (auto &kv : r)
+            if (kv.first->gr() == "dexter") found_dexter = true;
+        CHECK(found_dexter, "dextr\xC5\x8D (dextrō): lemma is dexter");
+    }
+
+    // --- Test 7: dextrō via lemmatiseM with debPhr=false (same invariant) ---
+    {
+        LemCore lc(RES, "fr");
+        MapLem r = lc.lemmatiseM("dextr\xC5\x8D", false);
+        CHECK(!r.empty(), "dextr\xC5\x8D debPhr=false: at least one result");
+    }
+
     RUN_TESTS();
 }

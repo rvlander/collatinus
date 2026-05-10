@@ -502,7 +502,7 @@ MapLem LemCore::lemmatise(const std::string &f)
     int cnt_oe  = (int)countOcc(f_lower, "\xC5\x93"); // œ
     if (endsWith(f_lower, "\xC3\xA6")) cnt_ae--;
 
-    std::string fd = Ch::deramise(f);
+    std::string fd = Ch::atone(Ch::deramise(f));
     if (_medieval) { fd = transfMed(fd); if (fd.empty()) return result; }
 
     // formes irrégulières
@@ -635,12 +635,17 @@ MapLem LemCore::lemmatiseM(const std::string &f, bool debPhr, int etape)
     if (f.empty()) return mm;
     if (etape > 3 || etape < 0) {
         mm = lemmatise(f);
-        if ((debPhr && !f.empty() && isupper((unsigned char)f[0])) ||
-            (mm.empty() && f == toUpper(f) && !f.empty() && !isdigit((unsigned char)f[0]) && f.size()>1))
         {
-            std::string nf = toLower(f);
-            MapLem nmm = lemmatiseM(nf);
-            for (auto &kv : nmm) mm[kv.first] = kv.second;
+            bool fIsAscii = std::all_of(f.begin(), f.end(),
+                [](unsigned char c){ return c < 0x80; });
+            if ((fIsAscii && debPhr && !f.empty() && isupper((unsigned char)f[0])) ||
+                (mm.empty() && fIsAscii && f == toUpper(f) && !f.empty() &&
+                 !isdigit((unsigned char)f[0]) && f.size()>1))
+            {
+                std::string nf = toLower(f);
+                MapLem nmm = lemmatiseM(nf);
+                for (auto &kv : nmm) mm[kv.first] = kv.second;
+            }
         }
         return mm;
     }
