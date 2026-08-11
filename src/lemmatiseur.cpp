@@ -20,45 +20,100 @@
  */
 
 #include "lemmatiseur.h"
+#include "lemme.h"
+#include <algorithm>
+#include <fstream>
+#include <map>
+#include <regex>
+#include <sstream>
+#include <iostream>
 
-Lemmatiseur::Lemmatiseur(QObject *parent, LemCore *l, QString cible, QString resDir) : QObject(parent)
+// ---------------------------------------------------------------------------
+// Helper: split a string at word boundaries, returning alternating
+// [separator, word, separator, word, ..., trailing_separator].
+// Odd indices are words, even indices are separators (same as Qt's
+// QString::split(QRegExp("\\b"))).
+// ---------------------------------------------------------------------------
+static std::vector<std::string> splitWordBoundary(const std::string &s)
 {
-    if (l==0)
-    {
-        _lemCore = new LemCore(this, resDir);
-        // Je crée le lemmatiseur...
-        _lemCore->setExtension(true);
-        // ... et charge l'extension du lexique.
+    std::vector<std::string> result;
+    // Match sequences of Latin letters (ASCII + extended Latin U+00C0-U+024F)
+    // encoded as UTF-8.  We match on raw bytes; non-ASCII lead bytes in the
+    // range C3-C9 followed by 80-BF cover U+00C0-U+024F.
+    std::regex wordRe("[A-Za-z]+|(?:[\xC3-\xC9][\x80-\xBF])+");
+    auto it  = std::sregex_iterator(s.begin(), s.end(), wordRe);
+    auto end = std::sregex_iterator();
+    size_t pos = 0;
+    for (; it != end; ++it) {
+        const std::smatch &m = *it;
+        result.push_back(s.substr(pos, (size_t)m.position() - pos)); // separator
+        result.push_back(m.str());                                     // word
+        pos = (size_t)m.position() + (size_t)m.length();
     }
-    else _lemCore = l;
-    if (resDir == "")
-        _resDir = qApp->applicationDirPath() + "/data/";
-    else if (resDir.endsWith("/")) _resDir = resDir;
-    else _resDir = resDir + "/";
+    result.push_back(s.substr(pos)); // trailing separator
+    return result;
+}
 
-    _alpha = false;
-    _formeT = false;
-    _html = false;
+// ---------------------------------------------------------------------------
+// Helper: collect multimap values in key order (ascending).
+// ---------------------------------------------------------------------------
+template<typename K, typename V>
+static std::vector<V> mm_vals_ordered(const std::multimap<K, V> &mm)
+{
+    std::vector<V> result;
+    for (const auto &kv : mm)
+        result.push_back(kv.second);
+    return result;
+}
+
+// ---------------------------------------------------------------------------
+// Constructor
+// ---------------------------------------------------------------------------
+Lemmatiseur::Lemmatiseur(LemCore *l, const std::string &cible,
+                         const std::string &resDir)
+{
+    if (l == nullptr) {
+        _lemCore = new LemCore(resDir);
+        _lemCore->setExtension(true);
+    } else {
+        _lemCore = l;
+    }
+
+    if (resDir.empty())
+        _resDir = "";
+    else if (endsWith(resDir, "/"))
+        _resDir = resDir;
+    else
+        _resDir = resDir + "/";
+
+    _alpha   = false;
+    _formeT  = false;
+    _html    = false;
     _majPert = false;
-    _morpho = false;
+    _morpho  = false;
+    _nonRec  = false;
 
-    if (cible != "") setCible(cible);
-    else setCible("fr en es");
+    if (!cible.empty())
+        setCible(cible);
+    else
+        setCible("fr en es");
 }
 
 /**
  * \fn QStringList Lemmat::lemmatiseF (QString f, bool deb)
  * \brief Lemmatise la chaîne f, sans tenir compte des majuscules
  *        si deb (= début de phrase) est à true, et renvoie le
- *        résultat dans une QStringList.
+ *        résultat dans une liste.
  */
-QStringList Lemmatiseur::lemmatiseF(QString f, bool deb)
+// ---------------------------------------------------------------------------
+// lemmatiseF
+// ---------------------------------------------------------------------------
+std::vector<std::string> Lemmatiseur::lemmatiseF(const std::string &f, bool deb)
 {
-    QStringList res;
+    std::vector<std::string> res;
     MapLem ml = _lemCore->lemmatiseM(f, deb);
-    foreach (Lemme *l, ml.keys())
-        res.append(l->humain(_html,_cible));
-    // if (res.empty()) res.append(f);
+    for (auto &kv : ml)
+        res.push_back(kv.first->humain(_html, _cible));
     return res;
 }
 
@@ -68,149 +123,171 @@ QStringList Lemmatiseur::lemmatiseF(QString f, bool deb)
  *        d'informations sur la fréquence d'emploi de
  *        chaque lemme.
  */
-QStringList Lemmatiseur::frequences(QString txt)
+// ---------------------------------------------------------------------------
+// frequences
+// ---------------------------------------------------------------------------
+std::vector<std::string> Lemmatiseur::frequences(const std::string &txt)
 {
-    // J'essaie d'échanger comptage et lemmatisation Ph.
-    QStringList formes = txt.split(Ch::reEspace);
-    QHash<QString, int> freq;  // Occurrences par formes
-    QStringList res;
-    QString forme;
-    int c = formes.count();
-    for (int i = 0; i < c; ++i)
-    {
-        forme = formes.at(i);
-        if (forme.isEmpty() || forme.toInt()) continue;
-        // supprimer les ponctuations
-        int pos = Ch::reAlphas.indexIn(forme);
-        if (pos < 0) continue;
-        forme = Ch::reAlphas.cap(1);
-        if ((i == 0) || formes[i - 1].contains(Ch::rePonct))
-            forme.prepend('*');  // = "*" + forme;
-        freq[forme]++;  // je suppose que le créateur d'entiers l'initialise à 0
-                        /* sinon prendre des précautons :
-                           if (freq.keys ().contains (r))
-                           freq[r] = freq[r]+1;
-                           else freq[r] = 1;
-                        */
+    // Split text on whitespace
+    std::regex wsRe("\\s+");
+    std::sregex_token_iterator tit(txt.begin(), txt.end(), wsRe, -1);
+    std::sregex_token_iterator tend;
+    std::vector<std::string> formes_tok(tit, tend);
+    // Remove empty tokens
+    formes_tok.erase(
+        std::remove_if(formes_tok.begin(), formes_tok.end(),
+                       [](const std::string &s){ return s.empty(); }),
+        formes_tok.end());
+
+    // Regex to capture alphabetic content of a token
+    std::regex reAlphas("([A-Za-z\xC0-\xFF]+)");
+    // Regex for punctuation (end-of-sentence)
+    std::regex rePonct("[.!?;:]");
+
+    std::unordered_map<std::string, int> freq;
+    int c = (int)formes_tok.size();
+    for (int i = 0; i < c; ++i) {
+        std::string forme = formes_tok[i];
+        if (forme.empty()) continue;
+        // Skip pure integers
+        bool allDigit = !forme.empty() &&
+            std::all_of(forme.begin(), forme.end(),
+                        [](unsigned char ch){ return isdigit(ch); });
+        if (allDigit) continue;
+        // Extract alphabetic content
+        std::smatch sm;
+        if (!std::regex_search(forme, sm, reAlphas)) continue;
+        forme = sm[1].str();
+        // Mark sentence-initial forms
+        bool prevPonct = (i > 0) && std::regex_search(formes_tok[i - 1], rePonct);
+        if (i == 0 || prevPonct)
+            forme = "*" + forme;
+        freq[forme]++;
     }
-    QHash<QString, int> lemOcc;  // Nombre d'occurrences par lemme
-    QHash<QString, QStringList>
-        lemFormUnic;  // liste de formes uniques = par lemme
-    QHash<QString, QStringList>
-        lemFormAmb;  // Liste de formes ambiguës par lemme
-    QHash<QString, QStringList>
-        formLemAmb;  // Liste de lemmes par forme ambiguë
-    foreach (forme, freq.keys())
-    {
-        if (forme.startsWith("*"))
-        {
-            QString forme2 = forme.mid(1);
-            res = lemmatiseF(forme2, true);
-        }
+
+    std::unordered_map<std::string, int> lemOcc;
+    std::unordered_map<std::string, std::vector<std::string>> lemFormUnic;
+    std::unordered_map<std::string, std::vector<std::string>> lemFormAmb;
+    std::unordered_map<std::string, std::vector<std::string>> formLemAmb;
+
+    for (auto &kv : freq) {
+        std::string forme = kv.first;
+        std::vector<std::string> res;
+        if (startsWith(forme, "*"))
+            res = lemmatiseF(forme.substr(1), true);
         else
             res = lemmatiseF(forme, false);
-        int occ = freq[forme];
-        if (res.count() == 1)
-        {
-            // lemFormUnic[res.at(0)].append(forme);
-            // lemOcc[res.at(0)] += occ;
-            lemFormUnic[res.first()].append(forme);
-            lemOcc[res.first()] += occ;
-        }
-        else
-        {
-            for (int i = 0; i < res.count(); i++)
-            {
-                lemFormAmb[res.at(i)].append(forme);
-                lemOcc[res.at(i)] += occ;
+        int occ = kv.second;
+        if (res.size() == 1) {
+            lemFormUnic[res[0]].push_back(forme);
+            lemOcc[res[0]] += occ;
+        } else {
+            for (const auto &r : res) {
+                lemFormAmb[r].push_back(forme);
+                lemOcc[r] += occ;
             }
             formLemAmb[forme] = res;
         }
     }
-    formes.clear();
-    formes << lemFormUnic.keys();
-    formes << lemFormAmb.keys();
-    formes.removeDuplicates();
-    QStringList sortie;
-    // formater les nombres pour tri inverse
-    int nUnic;
-    float nTotLem;
-    int nAmb;
-    float xAmb;
-    foreach (QString lemme, formes)
-    {
-        nUnic = 0;
-        foreach (forme, lemFormUnic[lemme])
+
+    // Collect unique lemme keys
+    std::vector<std::string> lemmes_all;
+    for (auto &kv : lemFormUnic) lemmes_all.push_back(kv.first);
+    for (auto &kv : lemFormAmb)  lemmes_all.push_back(kv.first);
+    removeDuplicates(lemmes_all);
+
+    std::vector<std::string> sortie;
+    for (const auto &lemme : lemmes_all) {
+        int nUnic = 0;
         {
-            nUnic += freq[forme];
+            auto it = lemFormUnic.find(lemme);
+            if (it != lemFormUnic.end())
+                for (const auto &f2 : it->second) {
+                    auto fi = freq.find(f2);
+                    if (fi != freq.end()) nUnic += fi->second;
+                }
         }
-        nAmb = 0;
-        xAmb = 0;
-        foreach (forme, lemFormAmb[lemme])
-        {  // Le lemme considéré a des formes qu'il partage avec d'autres lemmes
-            nTotLem = 0;
-            foreach (QString lem, formLemAmb[forme])
-                nTotLem += lemOcc[lem];
-            // Je somme les occurrences de tous les lemmes qui se rattachent à
-            // ma forme
-            nAmb += freq[forme];
-            xAmb += freq[forme] * lemOcc[lemme] / nTotLem;
-            // J'attribue une contribution de ma forme au lemme au prorata des
-            // occ des lemmes
-        }
-        int n = xAmb + nUnic + 10000.5;
-        QString numero;
-        numero.setNum(n);
-        numero = numero.mid(1);
-        n = xAmb + 0.5;  // pour faire un arrondi et pas une troncature
-        if (_hLem.isEmpty())
-            sortie << QString("%1 (%2, %3, %5)\t%4<br/>\n")
-                      .arg(numero)
-                      .arg(nUnic)
-                      .arg(nAmb)
-                      .arg(lemme)
-                      .arg(n);
-        else
+        int nAmb = 0;
+        float xAmb = 0.0f;
         {
-            // J'ai une liste de lemmes connus : je mets des couleurs !
-            QString lem = Ch::atone(lemme.left(lemme.indexOf(",")));
-            lem.replace("j","i");
-            lem.replace("J","I");
-            lem.remove("<strong>");
-            lem.remove("</strong>");
-            QString format = "%1 (%2, %3, %5)\t<span style=\"color:";
-            if (_hLem.contains(lem)) format += _couleurs[0];
-            else format += _couleurs[1];
-            format += "\">%4</span><br/>\n";
-            sortie << format.arg (numero).arg(nUnic).arg(nAmb).arg (lemme).arg(n);
+            auto it = lemFormAmb.find(lemme);
+            if (it != lemFormAmb.end()) {
+                for (const auto &f2 : it->second) {
+                    float nTotLem = 0.0f;
+                    auto fla = formLemAmb.find(f2);
+                    if (fla != formLemAmb.end())
+                        for (const auto &lem2 : fla->second) {
+                            auto oi = lemOcc.find(lem2);
+                            if (oi != lemOcc.end()) nTotLem += oi->second;
+                        }
+                    auto fi = freq.find(f2);
+                    int fOcc = (fi != freq.end()) ? fi->second : 0;
+                    nAmb += fOcc;
+                    if (nTotLem > 0.0f) {
+                        auto oi = lemOcc.find(lemme);
+                        int lOcc = (oi != lemOcc.end()) ? oi->second : 0;
+                        xAmb += fOcc * lOcc / nTotLem;
+                    }
+                }
+            }
         }
+        int nSort  = (int)(xAmb + nUnic + 10000.5f);
+        std::string numero = std::to_string(nSort).substr(1); // 4-digit zero-padded
+        int n_int = (int)(xAmb + 0.5f);
+
+        std::ostringstream line;
+        if (_hLem.empty()) {
+            line << numero
+                 << " (" << nUnic << ", " << nAmb << ", " << n_int << ")\t"
+                 << lemme << "<br/>\n";
+        } else {
+            // Apply colour based on whether lemme is known
+            std::string lem = Ch::atone(section(lemme, ',', 0, 0));
+            lem = replaceAll(lem, "j", "i");
+            lem = replaceAll(lem, "J", "I");
+            lem = replaceAll(lem, "<strong>", "");
+            lem = replaceAll(lem, "</strong>", "");
+            std::string color = (_hLem.count(lem) > 0) ? _couleurs[0] : _couleurs[1];
+            line << numero
+                 << " (" << nUnic << ", " << nAmb << ", " << n_int
+                 << ")\t<span style=\"color:" << color << "\">"
+                 << lemme << "</span><br/>\n";
+        }
+        sortie.push_back(line.str());
     }
-    qSort(sortie.begin(), sortie.end(), Ch::inv_sort_i);
-    // déformatage des nombres
-    int cs = sortie.count();
-    for (int i = 0; i < cs; ++i)
-    {
-        QString ls = sortie.at(i);
-        int z = 0;
-        while (ls.at(z) == '0') ++z;
-        ls = ls.mid(z);
-        if (ls.at(0) == ' ') ls.prepend("&lt;1");
-        sortie[i] = ls;
+
+    std::sort(sortie.begin(), sortie.end(), Ch::inv_sort_i);
+
+    // Strip leading zeros from the sort key prefix
+    for (size_t i = 0; i < sortie.size(); ++i) {
+        std::string &ls = sortie[i];
+        size_t z = 0;
+        while (z < ls.size() && ls[z] == '0') ++z;
+        ls = ls.substr(z);
+        if (!ls.empty() && ls[0] == ' ') ls = "&lt;1" + ls;
     }
-    sortie.insert(0, "légende : n (a, b, c)<br/>\n");
-    sortie.insert(1, "n = a+c<br/>\n");
-    sortie.insert(
-        2, "a = nombre de formes rattachées seulement à ce lemme<br/>\n");
-    sortie.insert(3,
-                  "b = nombre de formes ambigu\u00ebs (partagées par plusieurs "
-                  "lemmes)<br/>\n");
-    sortie.insert(4,
-                  "c = nombre probable de formes ambigu\u00ebs rattachées à ce "
-                  "lemme<br/>\n");
-    sortie.insert(5, "------------<br/>\n");
+
+    // Prepend legend
+    sortie.insert(sortie.begin(), "------------<br/>\n");
+    sortie.insert(sortie.begin(),
+        "c = nombre probable de formes ambigu\u00ebs rattach\u00e9es \u00e0 ce lemme<br/>\n");
+    sortie.insert(sortie.begin(),
+        "b = nombre de formes ambigu\u00ebs (partag\u00e9es par plusieurs lemmes)<br/>\n");
+    sortie.insert(sortie.begin(),
+        "a = nombre de formes rattach\u00e9es seulement \u00e0 ce lemme<br/>\n");
+    sortie.insert(sortie.begin(), "n = a+c<br/>\n");
+    sortie.insert(sortie.begin(), "l\u00e9gende : n (a, b, c)<br/>\n");
+
     return sortie;
 }
 
+// ---------------------------------------------------------------------------
+// lemmatiseT (single-arg: use stored options)
+// ---------------------------------------------------------------------------
+std::string Lemmatiseur::lemmatiseT(std::string &t)
+{
+    return lemmatiseT(t, _alpha, _formeT, _morpho, _nonRec);
+}
 
 /**
  * \fn QString Lemmatiseur::lemmatiseT (QString &t,
@@ -237,381 +314,295 @@ QStringList Lemmatiseur::frequences(QString txt)
  *        Fichier/Lire une liste de mots connus.
  *
  */
-QString Lemmatiseur::lemmatiseT(QString &t)
+// ---------------------------------------------------------------------------
+// lemmatiseT (full version)
+// ---------------------------------------------------------------------------
+std::string Lemmatiseur::lemmatiseT(std::string &t, bool alpha, bool cumVocibus,
+                                    bool cumMorpho, bool nreconnu)
 {
-    return lemmatiseT(t, _alpha, _formeT, _morpho, _nonRec);
-}
+    bool cumColoribus = !_couleurs.empty();
+    bool listeVide    = _hLem.empty();
+    int  colPrec      = 0;
+    int  formesConnues = 0;
 
-QString Lemmatiseur::lemmatiseT(QString &t, bool alpha, bool cumVocibus,
-                           bool cumMorpho, bool nreconnu)
-{
-    // pour mesurer :
-    // QElapsedTimer timer;
-    // timer.start();
-/*
-    alpha = alpha || _alpha;
-    cumVocibus = cumVocibus || _formeT;
-    cumMorpho = cumMorpho || _morpho;
-    nreconnu = nreconnu || _nonRec;
-*/
-    // Pour coloriser le texte
-    bool cumColoribus = !_couleurs.isEmpty();
-    bool listeVide = _hLem.isEmpty();
-    int colPrec = 0;
-    int formesConnues = 0;
-    // éliminer les chiffres et les espaces surnuméraires
-    t.remove(QRegExp("\\d"));
-//    t = t.simplified();
-    // découpage en mots
-    QStringList lm = t.split(QRegExp("\\b"));
-    // conteneur pour les résultats
-    QStringList lsv;
-    // conteneur pour les échecs
-    QStringList nonReconnus;
-    // lemmatisation pour chaque mot
+    // Remove digits
+    t = std::regex_replace(t, std::regex("\\d"), "");
+
+    // Split at word boundaries → alternating [sep, word, sep, word, ..., sep]
+    std::vector<std::string> lm = splitWordBoundary(t);
+
+    std::vector<std::string> lsv;
+    std::vector<std::string> nonReconnus;
+
     if (lm.size() < 2)
-    {
-//        qDebug() << t << lm.size() << lm;
         return "";
-        // Ça peut arriver que le texte ne contienne qu"une ponctuation
-    }
+
+    // Regex for end-of-sentence punctuation
+    std::regex rePonct("[.!?;:]");
+
+    // Process HTML entity sequences
+    std::map<std::string, int> occCode;
     int i = 1;
-    QMap<QString,int> occCode;
-    while (i < lm.length())
-    {
-        if ((lm[i-1].endsWith("&") || lm[i-1].endsWith("&#")) && lm[i+1].startsWith(";"))
+    while (i < (int)lm.size()) {
+        if ((endsWith(lm[i-1], "&") || endsWith(lm[i-1], "&#")) &&
+            i + 1 < (int)lm.size() && startsWith(lm[i+1], ";"))
         {
-            // Il y a un caractère en code html.
-            if (lm[i].endsWith("gr") || lm[i].endsWith("aquo") ||
-                    lm[i].endsWith("long") || lm[i-1].endsWith("&#"))
+            if (endsWith(lm[i], "gr")   || endsWith(lm[i], "aquo") ||
+                endsWith(lm[i], "long") || endsWith(lm[i-1], "&#"))
             {
-                // C'est un caractère grec : je ne le traite pas.
-                lm[i-1].append(lm[i]);
-                lm.removeAt(i);
-                lm[i-1].append(lm[i]);
-                lm.removeAt(i);
-                // Le pseudo-mot et le séparateur suivant sont groupés
-                // dans le séparateur précédent sans être modifiés.
+                // Greek or special: merge into separator
+                lm[i-1] += lm[i];
+                lm.erase(lm.begin() + i);
+                lm[i-1] += lm[i];
+                lm.erase(lm.begin() + i);
             }
-            else
+            else if (endsWith(lm[i], "acute") || endsWith(lm[i], "grave") ||
+                     endsWith(lm[i], "circ")  || endsWith(lm[i], "uml"))
             {
-                if (lm[i].endsWith("acute") || lm[i].endsWith("grave") ||
-                        lm[i].endsWith("circ") || lm[i].endsWith("uml"))
-                {
-                    // C'est un acute, grave, circ ou uml :
-                    // seul le premier caractère m'intéresse.
-                    lm[i] = lm[i].mid(0,1);
-                    if (lm[i+1] == ";")
-                    {
-                        // Cette voyelle se colle au mot suivant.
-                        lm.removeAt(i+1);
-                        lm[i].append(lm[i+1]);
-                        lm.removeAt(i+1);
-                        if (lm[i-1] == "&")
-                        {
-                            // Cette voyelle se colle au mot précédent.
-                            lm[i-2].append(lm[i]);
-                            lm.removeAt(i);
-                            lm.removeAt(i-1);
-                        }
-                        else
-                        {
-                            lm[i-1].chop(1);
-                            i += 2;
-                        }
+                lm[i] = lm[i].substr(0, 1);
+                if (i + 1 < (int)lm.size() && lm[i+1] == ";") {
+                    lm.erase(lm.begin() + i + 1);
+                    if (i + 1 < (int)lm.size()) {
+                        lm[i] += lm[i+1];
+                        lm.erase(lm.begin() + i + 1);
                     }
-                    else
-                    {
-                        lm[i+1] = lm[i+1].mid(1);
-                        if (lm[i-1] == "&")
-                        {
-                            // Cette voyelle se colle au mot précédent.
-                            lm[i-2].append(lm[i]);
-                            lm.removeAt(i);
-                            lm.removeAt(i-1);
-                        }
-                        else
-                        {
-                            lm[i-1].chop(1);
-                            i += 2;
-                        }
+                    if (lm[i-1] == "&") {
+                        lm[i-2] += lm[i];
+                        lm.erase(lm.begin() + i);
+                        if (i - 1 >= 0 && (size_t)(i-1) < lm.size())
+                            lm.erase(lm.begin() + i - 1);
+                    } else {
+                        if (!lm[i-1].empty()) lm[i-1].pop_back();
+                        i += 2;
+                    }
+                } else {
+                    if (i + 1 < (int)lm.size() && !lm[i+1].empty())
+                        lm[i+1] = lm[i+1].substr(1);
+                    if (lm[i-1] == "&") {
+                        lm[i-2] += lm[i];
+                        lm.erase(lm.begin() + i);
+                        if (i - 1 >= 0 && (size_t)(i-1) < lm.size())
+                            lm.erase(lm.begin() + i - 1);
+                    } else {
+                        if (!lm[i-1].empty()) lm[i-1].pop_back();
+                        i += 2;
                     }
                 }
-                else
-                {
-                    if (occCode.contains(lm[i])) occCode[lm[i]]++;
-                    else occCode[lm[i]] = 1;
-                    i += 2;
-                }
+            }
+            else {
+                occCode[lm[i]]++;
+                i += 2;
             }
         }
-        else i += 2;
+        else {
+            i += 2;
+        }
     }
-    foreach (QString code, occCode.keys())
-        qDebug() << code << occCode[code];
-    // Pour l'instant, juste la liste des codes rencontrés
-    for (int i = 1; i < lm.length(); i += 2)
-    {
-        QString f = lm.at(i);
-        if (f.toInt() != 0) continue;
-        // nettoyage et identification des débuts de phrase
-        QString sep = lm.at(i - 1);
-        bool debPhr = ((i == 1 && lm.count() !=3) || sep.contains(Ch::rePonct));
-        // lemmatisation de la forme
+    for (auto &kv : occCode)
+        std::cerr << kv.first << " " << kv.second << "\n";
+
+    // Main lemmatisation loop (odd indices = words)
+    for (int idx = 1; idx < (int)lm.size(); idx += 2) {
+        const std::string &f = lm[idx];
+        // Skip numeric tokens
+        bool allDigit = !f.empty() &&
+            std::all_of(f.begin(), f.end(),
+                        [](unsigned char ch){ return isdigit(ch); });
+        if (allDigit) continue;
+
+        const std::string &sep = lm[idx - 1];
+        bool debPhr = ((idx == 1 && lm.size() != 3) ||
+                       std::regex_search(sep, rePonct));
+
         MapLem map = _lemCore->lemmatiseM(f, !_majPert || debPhr);
-        // échecs
-        if (map.empty())
-        {
-            if (nreconnu)
-                nonReconnus.append(f + "\n");
-            else
-            {
+
+        if (map.empty()) {
+            // Unrecognised form
+            if (nreconnu) {
+                nonReconnus.push_back(f + "\n");
+            } else {
                 if (_html)
-                    lsv.append("<li style=\"color:blue;\">" + f + "</li>");
+                    lsv.push_back("<li style=\"color:blue;\">" + f + "</li>");
                 else
-                    lsv.append("> " + f + " ÉCHEC\n");
+                    lsv.push_back("> " + f + " \u00c9CHEC\n");
             }
-            if (cumColoribus)
-            {
-                if (!listeVide)
-                {
-                    // La liste de mots connus n'est pas vide. Le mot en fait-il partie ?
-                    QString lem = f;
-                    lem.replace("j","i");
-                    lem.replace("v","u");
-                    lem.replace("J","I");
-                    lem.replace("V","U");
-                    // qDebug() << lem;
-                    if (_hLem.contains(lem))
-                    {
+            if (cumColoribus) {
+                if (!listeVide) {
+                    std::string lem = f;
+                    lem = replaceAll(lem, "j", "i");
+                    lem = replaceAll(lem, "v", "u");
+                    lem = replaceAll(lem, "J", "I");
+                    lem = replaceAll(lem, "V", "U");
+                    if (_hLem.count(lem) > 0) {
                         _hLem[lem]++;
-                        if (colPrec != 0)
-                        {
-                            lm[i].prepend("</span><span style=\"color:"+_couleurs[0]+"\">");
+                        if (colPrec != 0) {
+                            lm[idx] = "</span><span style=\"color:" +
+                                      _couleurs[0] + "\">" + lm[idx];
                             colPrec = 0;
                         }
-                    }
-                    else if (colPrec != 2)
-                    {
-                        lm[i].prepend("</span><span style=\"color:"+_couleurs[2]+"\">");
+                    } else if (colPrec != 2) {
+                        lm[idx] = "</span><span style=\"color:" +
+                                  _couleurs[2] + "\">" + lm[idx];
                         colPrec = 2;
                     }
-                }
-                else if (colPrec != 2)
-                {
-                    lm[i].prepend("</span><span style=\"color:"+_couleurs[2]+"\">");
+                } else if (colPrec != 2) {
+                    lm[idx] = "</span><span style=\"color:" +
+                              _couleurs[2] + "\">" + lm[idx];
                     colPrec = 2;
                 }
             }
-        }
-        else
-        {
+        } else {
+            // Recognised
             bool connu = false;
-            if (cumColoribus)
-            {
-                if (!listeVide)
-                {
-                    // La liste de mots connus n'est pas vide. Un des lemmes identifiés en fait-il partie ?
-                    foreach (Lemme *l, map.keys())
-                        if (_hLem.contains(l->cle()))
-                        {
+            if (cumColoribus) {
+                if (!listeVide) {
+                    for (auto &kv : map)
+                        if (_hLem.count(kv.first->cle()) > 0) {
                             connu = true;
-                            _hLem[l->cle()]++;
+                            _hLem[kv.first->cle()]++;
                         }
-//                        connu = connu || _hLem.contains(l->cle());
                 }
-                if (connu)
-                {
-                    formesConnues += 1;
-                    if (colPrec != 0)
-                    {
-                        lm[i].prepend("</span><span style=\"color:"+_couleurs[0]+"\">");
+                if (connu) {
+                    formesConnues++;
+                    if (colPrec != 0) {
+                        lm[idx] = "</span><span style=\"color:" +
+                                  _couleurs[0] + "\">" + lm[idx];
                         colPrec = 0;
                     }
-                }
-                else if (colPrec != 1)
-                {
-                    lm[i].prepend("</span><span style=\"color:"+_couleurs[1]+"\">");
+                } else if (colPrec != 1) {
+                    lm[idx] = "</span><span style=\"color:" +
+                              _couleurs[1] + "\">" + lm[idx];
                     colPrec = 1;
                 }
             }
 
-            if (cumVocibus)
-            {
-                // avec affichage des formes du texte
-                // Le 10 novembre 2017,
-                // Je reprends tout le passage qui ordonne les solutions
-                // pour que ça se fasse pour tous les modes d'affichage.
-                // Jusqu'à présent, ça ne marchait qu'en html avec les formes.
-                QString debMorph = "\n    . ";
-                QString sepMorph = "\n    . ";
-                QString finMorph = "";
-                QString debLem = "  - ";
-                QString finLem = "\n";
-                // Je définis les chaines de début et fin d'entités
-                if (_html)
-                {
-                    // et les modifient si l'affichage est en html.
+            if (cumVocibus) {
+                // With text forms
+                std::string debMorph = "\n    . ";
+                std::string sepMorph = "\n    . ";
+                std::string finMorph = "";
+                std::string debLem   = "  - ";
+                std::string finLem   = "\n";
+                if (_html) {
                     debMorph = "<ul><li>";
                     sepMorph = "</li><li>";
                     finMorph = "</li></ul>";
-                    debLem = "<li>";
-                    finLem = "</li>";
+                    debLem   = "<li>";
+                    finLem   = "</li>";
                 }
-                QMultiMap<int,QString> listeLem;
-                // Je construis un QMultiMap avec un nombre d'occurrences en clef.
-                foreach (Lemme *l, map.keys())
-                {
-                    QString lem = debLem + l->humain(_html, _cible, true);
+                std::multimap<int, std::string> listeLem;
+                for (auto &kv : map) {
+                    Lemme *l = kv.first;
+                    const std::vector<SLem> &slems = kv.second;
+                    std::string lem = debLem + l->humain(_html, _cible, true);
                     int frMax = 0;
-                    if (cumMorpho && !_lemCore->inv(l, map))
-                    {
-                        // Je veux aussi donner les morphos associées
-                        // ce qui n'a de sens que si la forme du texte apparaît.
-                        QMultiMap<int,QString> listeMorph;
-                        // Un 2e QMultiMap
-                        foreach (SLem m, map.value(l))
-                        {
-                            int fr = _lemCore->fraction(_lemCore->tag(l,m.morpho));
+                    if (cumMorpho && !_lemCore->inv(l, map)) {
+                        std::multimap<int, std::string> listeMorph;
+                        for (const SLem &m : slems) {
+                            int fr = _lemCore->fraction(_lemCore->tag(l, m.morpho));
                             if (fr > frMax) frMax = fr;
-                            if (m.sufq.isEmpty())
-                                listeMorph.insert(-fr,m.grq + " " + _lemCore->morpho(m.morpho));
-                            // La fréquence est négative pour inverser l'ordre.
-                            else
-                                listeMorph.insert(-fr,m.grq + " + " + m.sufq +
-                                                  " " + _lemCore->morpho(m.morpho));
+                            std::string entry = m.grq;
+                            if (!m.sufq.empty())
+                                entry += " + " + m.sufq;
+                            entry += " " + _lemCore->morpho(m.morpho);
+                            listeMorph.insert(std::make_pair(-fr, entry));
                         }
-                        lem.append(debMorph);
-                        QStringList lMorph = listeMorph.values();
-                        // Liste des morphos ordonnée en ordre croissant des clefs.
-                        // Comme la clef est -fr, la plus fréquente vient d'abord.
-                        lem.append(lMorph.join(sepMorph));
-                        // Je joins les différentes morphos.
-                        lem.append(finMorph);
-                        // J'ai encapsulé les morphos et les ai ajoutées au lemme.
-                    }
-                    else foreach (SLem m, map.value(l))
-                    {
-                        // Sans donner les morphos, je dois quand même évaluer frMax.
-                        int fr = _lemCore->fraction(_lemCore->tag(l,m.morpho));
-                        if (fr > frMax) frMax = fr;
+                        std::vector<std::string> lMorph = mm_vals_ordered(listeMorph);
+                        lem += debMorph + join(lMorph, sepMorph) + finMorph;
+                    } else {
+                        for (const SLem &m : slems) {
+                            int fr = _lemCore->fraction(_lemCore->tag(l, m.morpho));
+                            if (fr > frMax) frMax = fr;
+                        }
                     }
                     if (frMax == 0) frMax = 1024;
-                    lem.append(finLem);
-                    // Je finis d'encapsuler le lemme
-                    listeLem.insert(-frMax * l->nbOcc(),lem);
-                    // et lui associe la plus grande fréquence observée pour les morphos.
+                    lem += finLem;
+                    listeLem.insert(std::make_pair(-frMax * l->nbOcc(), lem));
                 }
-                QStringList lLem = listeLem.values();
-                // Les valeurs sont en ordre croissant
-                // Comme les fréquences sont négatives, la plus fréquente vient d'abord.
-                QString lin = lLem.join("");
-                // L'ensemble des solutions forme un tout que j'encapsule
-                if (_html)
-                {
-                    lin.prepend("<li><h4>" + f + "</h4><ul>");
-                    lin.append("</ul></li>\n");
+                std::vector<std::string> lLem = mm_vals_ordered(listeLem);
+                std::string lin = join(lLem, "");
+                if (_html) {
+                    lin = "<li><h4>" + f + "</h4><ul>" + lin + "</ul></li>\n";
+                } else {
+                    lin = "* " + f + "\n" + lin;
                 }
-                else
-                {
-                    lin.prepend("* " + f + "\n");
-                }
-//                lsv.append(lin);
-                if (!connu || listeVide) lsv.append(lin);
-                // Par défaut, pas d'aide pour les mots connus.
-            }
-            else  // sans les formes du texte
-            {
-                foreach (Lemme *l, map.keys())
-                {
-                    QString lin = l->humain(_html, _cible);
-                    if (cumMorpho && !_lemCore->inv(l, map) && !alpha)
-                    {
-                        // Sans les formes du texte et avec les lemmes en ordre
-                        // alphabétique, la morpho n'aurait que peu de sens.
-                        QTextStream fl(&lin);
-                        if (_html)
-                        {
+                if (!connu || listeVide) lsv.push_back(lin);
+            } else {
+                // Without text forms
+                for (auto &kv : map) {
+                    Lemme *l = kv.first;
+                    const std::vector<SLem> &slems = kv.second;
+                    std::string lin = l->humain(_html, _cible);
+                    if (cumMorpho && !_lemCore->inv(l, map) && !alpha) {
+                        std::ostringstream fl;
+                        if (_html) {
                             fl << "<ul>";
-                            foreach (SLem m, map.value(l))
-                                fl << "<li>" << m.grq << " " << _lemCore->morpho(m.morpho) << "</li>";
+                            for (const SLem &m : slems)
+                                fl << "<li>" << m.grq << " "
+                                   << _lemCore->morpho(m.morpho) << "</li>";
                             fl << "</ul>\n";
+                        } else {
+                            for (const SLem &m : slems)
+                                fl << "\n    . " << m.grq << " "
+                                   << _lemCore->morpho(m.morpho);
                         }
-                        else
-                            foreach (SLem m, map.value(l))
-                                fl << "\n    . " << m.grq << " " << _lemCore->morpho(m.morpho);
+                        lin += fl.str();
                     }
-                    if (_html)
-                    {
-                        lin.prepend("<li>");
-                        lin.append("</li>");
+                    if (_html) {
+                        lin = "<li>" + lin + "</li>";
+                    } else {
+                        lin = "* " + lin + "\n";
                     }
-                    else
-                    {
-                        lin.prepend("* ");
-                        lin.append("\n");
-                    }
-//                    lsv.append(lin);
-                    if (!connu || listeVide) lsv.append(lin);
-                    // Par défaut, pas d'aide pour les mots connus.
+                    if (!connu || listeVide) lsv.push_back(lin);
                 }
             }
         }
     }  // fin de boucle de lemmatisation pour chaque mot
 
-    if (alpha)
-    {
-        lsv.removeDuplicates();
-        qSort(lsv.begin(), lsv.end(), Ch::sort_i);
+    if (alpha) {
+        removeDuplicates(lsv);
+        std::sort(lsv.begin(), lsv.end(), Ch::sort_i);
     }
-    // peupler lRet avec les résultats
-    QStringList lRet = lsv;
-    if (_html)
-    {
-        lRet.prepend("<ul>");
-        lRet.append("</ul>\n");
+
+    std::vector<std::string> lRet = lsv;
+    if (_html) {
+        lRet.insert(lRet.begin(), "<ul>");
+        lRet.push_back("</ul>\n");
     }
-/*    foreach (QString item, lsv)
-    {
-        if (_html)
-            lRet.append("<li>" + item + "</li>");
-        else
-            lRet.append("* " + item + "\n");
+
+    if (nreconnu && !nonReconnus.empty()) {
+        removeDuplicates(nonReconnus);
+        std::string nl = _html ? "<br/>" : "";
+        if (alpha)
+            std::sort(nonReconnus.begin(), nonReconnus.end(), Ch::sort_i);
+        int tot = ((int)lm.size() - 1) / 2;
+        std::ostringstream oss;
+        oss << "--- " << nonReconnus.size() << "/" << tot << " ("
+            << (((int)nonReconnus.size() * 200 + tot) / tot) / 2
+            << " %) FORMES NON RECONNUES ---" << nl << "\n";
+        lRet.push_back(oss.str() + nl);
+        for (const auto &nr : nonReconnus)
+            lRet.push_back(nr + nl);
     }
-    if (_html) lRet.append("</ul>\n");*/
-    // non-reconnus en fin de liste si l'option nreconnu
-    // est armée
-    if (nreconnu && !nonReconnus.empty())
-    {
-        nonReconnus.removeDuplicates();
-        QString nl;
-        if (_html) nl = "<br/>";
-        if (alpha) qSort(nonReconnus.begin(), nonReconnus.end(), Ch::sort_i);
-        QString titreNR;
-        int tot = (lm.count() - 1) / 2;
-        QTextStream(&titreNR) << "--- " << nonReconnus.count() << "/"
-                              << tot << " ("
-                              << (((nonReconnus.count() * 200 + tot) / tot) / 2)
-                              << " %) FORMES NON RECONNUES ---" << nl << "\n";
-        lRet.append(titreNR + nl);
-        foreach (QString nr, nonReconnus)
-            lRet.append(nr + nl);
-    }
-    if (cumColoribus)
-    {
-        lm[0].append("<span style=\"color:"+_couleurs[0]+"\">");
-        lm[lm.size()-1].append("</span>");
-        t = lm.join("");
-        t.replace("\n","<br/>\n");
-        if (!listeVide)
-        {
-            QString stats = "<strong>Formes connues : %1 sur %2 (%3%)<br/></strong>";
-            lRet.prepend(stats.arg(formesConnues).arg((lm.size()/2)).arg((200*formesConnues)/(lm.size()-1)));
+
+    if (cumColoribus) {
+        if (!lm.empty()) lm[0] += "<span style=\"color:" + _couleurs[0] + "\">";
+        if (!lm.empty()) lm.back() += "</span>";
+        t = join(lm, "");
+        t = replaceAll(t, "\n", "<br/>\n");
+        if (!listeVide) {
+            std::ostringstream stats;
+            int total = (int)(lm.size() / 2);
+            int denom = (int)lm.size() - 1;
+            stats << "<strong>Formes connues : " << formesConnues
+                  << " sur " << total
+                  << " (" << (denom > 0 ? (200 * formesConnues) / denom : 0)
+                  << "%)<br/></strong>";
+            lRet.insert(lRet.begin(), stats.str());
         }
     }
-    // fin de la mesure :
-    // qDebug()<<"Eneide"<<timer.nsecsElapsed()<<"ns";
-    return lRet.join("");
+
+    return join(lRet, "");
 }
 
 /**
@@ -624,183 +615,153 @@ QString Lemmatiseur::lemmatiseT(QString &t, bool alpha, bool cumVocibus,
  *        f et renvoie le résultat. Les paramètres sont
  *        les mêmes que ceux de lemmatiseT.
  */
-QString Lemmatiseur::lemmatiseFichier(QString f, bool alpha, bool cumVocibus,
-                                 bool cumMorpho, bool nreconnu)
+// ---------------------------------------------------------------------------
+// lemmatiseFichier
+// ---------------------------------------------------------------------------
+std::string Lemmatiseur::lemmatiseFichier(const std::string &f, bool alpha,
+                                          bool cumVocibus, bool cumMorpho,
+                                          bool nreconnu)
 {
-    // lecture du fichier
-    QFile fichier(f);
-    fichier.open(QFile::ReadOnly);
-    QTextStream flf(&fichier);
-    flf.setCodec("UTF-8"); // Pour windôze !
-    QString texte = flf.readAll();
-    fichier.close();
+    std::ifstream fichier(f);
+    if (!fichier.is_open()) return "";
+    std::ostringstream oss;
+    oss << fichier.rdbuf();
+    std::string texte = oss.str();
     return lemmatiseT(texte, alpha, cumVocibus, cumMorpho, nreconnu);
 }
 
-void Lemmatiseur::verbaCognita(QString fichier,bool vb)
+// ---------------------------------------------------------------------------
+// verbaCognita
+// ---------------------------------------------------------------------------
+void Lemmatiseur::verbaCognita(const std::string &fichier, bool vb)
 {
     _hLem.clear();
     _couleurs.clear();
-    if (vb)
-    {
-        // Couleurs par défaut
-        _couleurs << "#00A000"; // vert
-        _couleurs << "#000000"; // noir
-        _couleurs << "#A00000"; // rouge
+    if (vb) {
+        _couleurs.push_back("#00A000"); // known: green
+        _couleurs.push_back("#000000"); // recognised: black
+        _couleurs.push_back("#A00000"); // unrecognised: red
     }
-    // Je peux activer le textiColor sans avoir de liste.
-    // Auquel cas, j'aurai les mots connus par Collatinus en noir
-    // et les non-reconnus en rouge.
-    if (vb && !fichier.isEmpty())
-    {
-        QFile file(fichier);
-        if (file.open(QFile::ReadOnly | QFile::Text))
-        {
-            QTextStream in(&file);
-            QString ligne = in.readLine();
-            while (ligne.startsWith("!") || ligne.isEmpty()) ligne = in.readLine();
-            // Je saute les commentaires et les lignes vides.
-            int i = 0;
-            while (ligne.startsWith("#") &&  !in.atEnd())
-            {
-                if ((i<3) && (ligne.size() == 7)) _couleurs[i] = ligne;
-                i+=1;
-                ligne = in.readLine();
-            }
-            // Je peux changer les couleurs dans le fichier
-            MapLem item;
-            while (!in.atEnd())
-            {
-                if (!ligne.startsWith("!") && !ligne.isEmpty()) // hLem.insert(ligne,1);
-                {
-                    item = _lemCore->lemmatiseM (ligne, false, false);
-                    foreach (Lemme *lem, item.keys())
-                        _hLem.insert(lem->cle(),0);
-                }
-                ligne = in.readLine();
-            }
+    if (!vb || fichier.empty()) return;
+
+    std::ifstream in(fichier);
+    if (!in.is_open()) return;
+
+    std::string ligne;
+    // Skip comment and empty lines at start
+    while (std::getline(in, ligne)) {
+        if (!startsWith(ligne, "!") && !ligne.empty()) break;
+    }
+    // Read optional colour overrides (#RRGGBB lines)
+    int i = 0;
+    while (startsWith(ligne, "#") && !in.eof()) {
+        if (i < 3 && ligne.size() == 7) _couleurs[i] = ligne;
+        i++;
+        if (!std::getline(in, ligne)) break;
+    }
+    // Read known lemma forms
+    do {
+        if (!startsWith(ligne, "!") && !ligne.empty()) {
+            MapLem item = _lemCore->lemmatiseM(ligne, false, false);
+            for (auto &kv : item)
+                _hLem[kv.first->cle()] = 0;
         }
-    }
+    } while (std::getline(in, ligne));
 }
 
-void Lemmatiseur::verbaOut(QString fichier)
+// ---------------------------------------------------------------------------
+// verbaOut
+// ---------------------------------------------------------------------------
+void Lemmatiseur::verbaOut(const std::string &fichier)
 {
-    if (_hLem.isEmpty()) return; // Rien à sauver !
-    QString format = "%1\t%2\n";
-    QFile file(fichier);
-    if (file.open(QFile::WriteOnly | QFile::Text))
-        foreach (QString lem, _hLem.keys())
-    {
-            file.write(format.arg(lem).arg(_hLem[lem]).toUtf8());
-    }
+    if (_hLem.empty()) return;
+    std::ofstream file(fichier);
+    if (file.is_open())
+        for (const auto &kv : _hLem)
+            file << kv.first << "\t" << kv.second << "\n";
 }
 
+// ---------------------------------------------------------------------------
+// Option accessors
+// ---------------------------------------------------------------------------
 /**
  * \fn bool Lemmatiseur::optAlpha()
  * \brief Accesseur de l'option alpha, qui
  *        permet de fournir par défaut des résultats dans
  *        l'ordre alphabétique.
  */
-bool Lemmatiseur::optAlpha() { return _alpha; }
+bool        Lemmatiseur::optAlpha()  { return _alpha;   }
 /**
  * \fn bool Lemmatiseur::optHtml()
  * \brief Accesseur de l'option html, qui
  *        permet de renvoyer les résultats au format html.
  */
-bool Lemmatiseur::optHtml() { return _html; }
-
+bool        Lemmatiseur::optHtml()   { return _html;    }
 /**
  * \fn bool Lemmatiseur::optFormeT()
  * \brief Accesseur de l'option formeT,
  *        qui donne en tête de lemmatisation
  *        la forme qui a été analysée.
  */
-bool Lemmatiseur::optFormeT() { return _formeT; }
-
+bool        Lemmatiseur::optFormeT() { return _formeT;  }
 /**
  * \fn bool Lemmatiseur::optMajPert()
  * \brief Accesseur de l'option majPert,
  *        qui permet de tenir compte des majuscules
  *        dans la lemmatisation.
  */
-bool Lemmatiseur::optMajPert() { return _majPert; }
+bool        Lemmatiseur::optMajPert(){ return _majPert; }
 /**
  * \fn bool Lemmatiseur::optMorpho()
  * \brief Accesseur de l'option morpho,
  *        qui donne l'analyse morphologique
  *        des formes lemmatisées.
  */
-bool Lemmatiseur::optMorpho()
-{
-    return _morpho;
-}
-
-bool Lemmatiseur::optNonRec()
-{
-    return _nonRec;
-}
-/*
-QString Lemmat::transfMed(QString f, bool rad)
-{
-    if (f.isEmpty()) return "";
-    bool maj = f.at(0).isUpper();
-    f = f.toLower();
-    foreach (Reglep r, _reglesMed)
-        if (!r.second.endsWith("*")) f.replace(r.first, r.second);
-        else if (rad)
-        {
-            QString rs = r.second;
-            rs.chop(1);
-            f.replace(r.first, rs);
-        }
-    if (maj) f[0] = f[0].toUpper();
-    return f;
-}
-*/
-/**
- * \fn void Lemmatiseur::setAlpha (bool a)
- * \brief Modificateur de l'option alpha.
- */
-// modificateurs d'options
-
-void Lemmatiseur::setAlpha(bool a) { _alpha = a; }
-/**
- * \fn void Lemmatiseur::setCible(QString c)
- * \brief Permet de changer la langue cible.
- */
-void Lemmatiseur::setCible(QString c)
-{
-    _cible = c;
-    _lemCore->setCible(c);
-}
-/**
- * \fn void Lemmatiseur::setHtml (bool h)
- * \brief Modificateur de l'option html.
- */
-void Lemmatiseur::setHtml(bool h) { _html = h; }
-/**
- * \fn void Lemmatiseur::setFormeT (bool f)
- * \brief Modificateur de l'option formeT.
- */
-void Lemmatiseur::setFormeT(bool f) { _formeT = f; }
-/**
- * \fn void Lemmatiseur::setMajPert (bool mp)
- * \brief Modificateur de l'option majpert.
- */
-void Lemmatiseur::setMajPert(bool mp) { _majPert = mp; }
-/**
- * \fn void Lemmatiseur::setMorpho (bool m)
- * \brief Modificateur de l'option morpho.
- */
-void Lemmatiseur::setMorpho(bool m) { _morpho = m; }
-void Lemmatiseur::setNonRec(bool n) { _nonRec = n; }
-
+bool        Lemmatiseur::optMorpho() { return _morpho;  }
+bool        Lemmatiseur::optNonRec() { return _nonRec;  }
 /**
  * \fn QString Lemmatiseur::cible()
  * \brief Renvoie la langue cible dans sa forme
  *        abrégée (fr, en, de, it, etc.).
  */
-QString Lemmatiseur::cible()
+std::string Lemmatiseur::cible()     { return _cible;   }
+
+// ---------------------------------------------------------------------------
+// Option mutators
+// ---------------------------------------------------------------------------
+/**
+ * \fn void Lemmatiseur::setAlpha (bool a)
+ * \brief Modificateur de l'option alpha.
+ */
+void Lemmatiseur::setAlpha(bool a)              { _alpha = a; }
+/**
+ * \fn void Lemmatiseur::setHtml (bool h)
+ * \brief Modificateur de l'option html.
+ */
+void Lemmatiseur::setHtml(bool h)               { _html = h; }
+/**
+ * \fn void Lemmatiseur::setFormeT (bool f)
+ * \brief Modificateur de l'option formeT.
+ */
+void Lemmatiseur::setFormeT(bool f)             { _formeT = f; }
+/**
+ * \fn void Lemmatiseur::setMajPert (bool mp)
+ * \brief Modificateur de l'option majpert.
+ */
+void Lemmatiseur::setMajPert(bool mp)           { _majPert = mp; }
+/**
+ * \fn void Lemmatiseur::setMorpho (bool m)
+ * \brief Modificateur de l'option morpho.
+ */
+void Lemmatiseur::setMorpho(bool m)             { _morpho = m; }
+void Lemmatiseur::setNonRec(bool n)             { _nonRec = n; }
+
+/**
+ * \fn void Lemmatiseur::setCible(QString c)
+ * \brief Permet de changer la langue cible.
+ */
+void Lemmatiseur::setCible(const std::string &c)
 {
-    return _cible;
+    _cible = c;
+    _lemCore->setCible(c);
 }

@@ -22,16 +22,11 @@
 #ifndef LEMME_H
 #define LEMME_H
 
-#include <QMultiMap>
-#include <QObject>
-#include <QString>
-#include <QDebug>
-#include <QStringList>
-
-#include "irregs.h"
-#include "lemCore.h"
-#include "modele.h"
+#include <string>
+#include <vector>
+#include <map>
 #include "ch.h"
+#include "string_utils.h"
 
 class Irreg;
 class LemCore;
@@ -41,80 +36,79 @@ class Modele;
 /**
  * @brief La classe Radical décrit les radicaux associés aux lemmes
  */
-class Radical : public QObject
+class Radical
 {
    private:
-    QString _gr;
-    QString _grq;
-    Lemme* _lemme;
+    std::string _gr;
+    std::string _grq;
+    Lemme *_lemme;
     int _numero;
 
    public:
-    Radical(QString g, int n, QObject* parent);
-    QString gr();
-    QString grq() const;
-    Lemme* lemme();
-    Modele* modele();
+    Radical(const std::string &g, int n, Lemme *parent);
+    std::string gr();
+    std::string grq() const;
+    Lemme *lemme();
+    Modele *modele();
     int numRad();
 };
 
 /**
  * @brief La classe Lemme décrit les lemmes.
  */
-class Lemme : public QObject
+class Lemme
 {
-    Q_OBJECT
    private:
-    static    LemCore*          _lemCore;
-    QString                     _cle;
-    QString                     _gr;
-    QString                     _grd;
-    QString                     _grq;
-    QString                     _grModele;
-    QString                     _hyphen; // Pour les césures étymologies
-    QString                     _indMorph;
-    QList<Irreg*>               _irregs;
-    Modele*                     _modele;
-    int                         _nh;
-    QList<int>                  _morphosIrrExcl;
-    int                         _nbOcc; // Nombre d'occurrences du lemme dans les textes du LASLA
-    int                         _origin; // lemmes ou lem_ext
-    QString                     _pos;
-    QMap<int, QList<Radical*> > _radicaux;
-    QString                     _renvoi;
-    QMap<QString,QString>       _traduction;
+    static LemCore *_lemCore;
+    std::string _cle;
+    std::string _gr;
+    std::string _grd;
+    std::string _grq;
+    std::string _grModele;
+    std::string _hyphen; // Pour les césures étymologiques
+    std::string _indMorph;
+    std::vector<Irreg *> _irregs;
+    Modele *_modele;
+    int _nh;
+    std::vector<int> _morphosIrrExcl;
+    int _nbOcc; // Nombre d'occurrences du lemme dans les textes du LASLA
+    int _origin; // lemmes ou lem_ext
+    std::string _pos;
+    std::map<int, std::vector<Radical *>> _radicaux;
+    std::string _renvoi;
+    std::map<std::string, std::string> _traduction;
 
    public:
-    Lemme(const QString linea, const int origin, QObject* parent);
-    static    void      setLemCore(LemCore* l);
-    void                ajIrreg(Irreg* irr);
-    void                ajNombre(int n);
-    void                ajRadical(int i, Radical* r);
-    void                ajTrad(QString t, QString l);
-    QString             ambrogio();
-    QString             cle();
-    QList<int>          clesR();
-    bool                estIrregExcl(int nm);
-    QString             genre();
-    QString             getHyphen (); // Accesseurs pour les césures étymologiques
-    QString             gr();
-    QString             grq();
-    QString             grModele();
-    QString             humain(bool html = false, QString l = "fr", bool nbr = false);
-    QString             indMorph();
-    QString             irreg(int i, bool* excl);
-    Modele*             modele();
-    int                 nbOcc() const;    // Retourne le nombre d'occurrences du lemme
-    void                clearOcc(); // Efface       "           "            "
-    int                 nh();
-    int                 origin();
-    QString static      oteNh(QString g, int& nh);
-    QString             pos();
-    QList<Radical*>     radical(int r);
-    bool                renvoi();
-    void                setHyphen (QString h);
-    QString             traduction(QString l);
-    inline bool operator<(const Lemme &l) const;
+    Lemme(const std::string &linea, int origin);
+    static void setLemCore(LemCore *l);
+    void ajIrreg(Irreg *irr);
+    void ajNombre(int n);
+    void ajRadical(int i, Radical *r);
+    void ajTrad(const std::string &t, const std::string &l);
+    std::string ambrogio();
+    std::string cle();
+    std::vector<int> clesR();
+    bool estIrregExcl(int nm);
+    std::string genre();
+    std::string getHyphen(); // Accesseur pour les césures étymologiques
+    std::string gr();
+    std::string grq();
+    std::string grModele();
+    std::string humain(bool html = false, const std::string &l = "fr", bool nbr = false);
+    std::string indMorph();
+    std::string irreg(int i, bool *excl);
+    Modele *modele();
+    int nbOcc() const;    // Retourne le nombre d'occurrences du lemme
+    void clearOcc(); // Efface       "           "            "
+    int nh();
+    int origin();
+    static std::string oteNh(const std::string &g, int &nh);
+    std::string pos();
+    std::vector<Radical *> radical(int r);
+    bool renvoi();
+    void setHyphen(const std::string &h);
+    std::string traduction(const std::string &l);
+    inline bool operator<(const Lemme &l) const { return _nbOcc < l.nbOcc(); }
 };
 
 #endif

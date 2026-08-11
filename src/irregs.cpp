@@ -26,6 +26,9 @@
 //
 
 #include "irregs.h"
+#include "lemCore.h"
+#include "lemme.h"
+#include "modele.h"
 
 /**
  * \fn Irreg::Irreg (QString l, QObject *parent)
@@ -34,18 +37,17 @@
  *        lemmatiseur (classe Lemmat) représenté par
  *        le paramètre *parent.
  */
-Irreg::Irreg(QString l, QObject* parent)
+Irreg::Irreg(const std::string &l, LemCore *lemmat)
 {
-    if (parent != 0) _lemmat = qobject_cast<LemCore*>(parent);
-    QStringList ecl = l.split(':');
+    _lemmat = lemmat;
+    std::vector<std::string> ecl = split(l, ':');
     _grq = ecl.at(0);
-    if (_grq.endsWith("*"))
-    {
-        _grq.chop(1);
+    if (endsWith(_grq, "*")) {
+        _grq.pop_back();
         _exclusif = true;
-    }
-    else
+    } else {
         _exclusif = false;
+    }
     _gr = Ch::atone(_grq);
     _lemme = _lemmat->lemme(ecl.at(1));
     _morphos = Modele::listeI(ecl.at(2));
@@ -62,21 +64,21 @@ bool Irreg::exclusif() { return _exclusif; }
  * \fn QString Irreg::gr ()
  * \brief Graphie ramiste sans diacritique.
  */
-QString Irreg::gr() { return _gr; }
+std::string Irreg::gr()  { return _gr; }
 /**
  * \fn QString Irreg::grq ()
- * \brief Graphie ramiset avec diacritiques.
+ * \brief Graphie ramiste avec diacritiques.
  */
-QString Irreg::grq() { return _grq; }
+std::string Irreg::grq() { return _grq; }
 /**
  * \fn Lemme* Irreg::lemme ()
  * \brief Le lemme de l'irrégulier.
  */
-Lemme* Irreg::lemme() { return _lemme; }
+Lemme *Irreg::lemme()    { return _lemme; }
 /**
  * \fn QList<int> Irreg::morphos ()
  * \brief liste des numéros de morphos
  *        que peut prendre l'irrégulier, en
  *        tenant compte des quantités.
  */
-QList<int> Irreg::morphos() { return _morphos; }
+std::vector<int> Irreg::morphos() { return _morphos; }

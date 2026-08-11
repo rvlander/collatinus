@@ -22,33 +22,31 @@
 #ifndef LEMMATISEUR_H
 #define LEMMATISEUR_H
 
-#include <QObject>
-#include <QHash>
-
-#include <QDebug>
-
+#include <string>
+#include <vector>
+#include <unordered_map>
 #include "ch.h"
 #include "lemCore.h"
+#include "string_utils.h"
 
-class Lemmatiseur : public QObject
+class Lemmatiseur
 {
-    Q_OBJECT
-
 public:
-    Lemmatiseur(QObject *parent = 0, LemCore *l=0, QString cible="", QString resDir="");
+    Lemmatiseur(LemCore *l = nullptr, const std::string &cible = "",
+                const std::string &resDir = "");
     // Créateur de la classe
-    QStringList frequences(QString txt);
-    QStringList lemmatiseF(QString f, bool deb);
-    QString lemmatiseFichier(QString f, bool alpha = false,
-                             bool cumVocibus = false, bool cumMorpho = false,
-                             bool nreconnu = true);
+    std::vector<std::string> frequences(const std::string &txt);
+    std::vector<std::string> lemmatiseF(const std::string &f, bool deb);
+    std::string lemmatiseFichier(const std::string &f, bool alpha = false,
+                                 bool cumVocibus = false, bool cumMorpho = false,
+                                 bool nreconnu = true);
     // lemmatiseT lemmatise un texte
-    QString lemmatiseT(QString &t);
-    QString lemmatiseT(QString &t, bool alpha, bool cumVocibus = false,
-                       bool cumMorpho = false, bool nreconnu = false);
+    std::string lemmatiseT(std::string &t);
+    std::string lemmatiseT(std::string &t, bool alpha, bool cumVocibus = false,
+                           bool cumMorpho = false, bool nreconnu = false);
 
-    void verbaOut(QString fichier); // Connaître l'usage des mots connus
-    void verbaCognita(QString fichier, bool vb=false); // Coloriser le texte avec les mots connus
+    void verbaOut(const std::string &fichier);    // Connaître l'usage des mots connus
+    void verbaCognita(const std::string &fichier, bool vb = false); // Coloriser le texte avec les mots connus
 
     // accesseurs d'options
     bool optAlpha();
@@ -57,12 +55,11 @@ public:
     bool optMajPert();
     bool optMorpho();
     bool optNonRec();
-    QString cible();
+    std::string cible();
 
-public slots :
     // modificateurs d'options
     void setAlpha(bool a);
-    void setCible(QString c);
+    void setCible(const std::string &c);
     void setHtml(bool h);
     void setFormeT(bool f);
     void setMajPert(bool mp);
@@ -71,9 +68,9 @@ public slots :
 
 private:
     LemCore * _lemCore;
-    QString _resDir;
-    QHash<QString,int> _hLem;
-    QStringList _couleurs;
+    std::string _resDir;
+    std::unordered_map<std::string, int> _hLem;
+    std::vector<std::string> _couleurs;
     // options
     bool _alpha;
     bool _formeT;
@@ -81,8 +78,7 @@ private:
     bool _majPert;
     bool _morpho;
     bool _nonRec;
-    QString _cible;  // langue courante, 2 caractères ou plus
-
+    std::string _cible;  // langue courante, 2 caractères ou plus
 };
 
-#endif // LEMMATISEUR_H
+#endif

@@ -22,25 +22,18 @@
 #ifndef LEMCORE_H
 #define LEMCORE_H
 
-#include <QMap>
-#include <QString>
-#include <QStringList>
-#include <QtCore/QCoreApplication>
-#include <QDir>
-#include <QFile>
-#include <QRegExp>
-#include <QTextStream>
-#include <iostream>
-
+#include <string>
+#include <vector>
+#include <map>
+#include <regex>
 #include "ch.h"
-#include "irregs.h"
-#include "lemme.h"
-#include "modele.h"
+#include "string_utils.h"
 
 class Irreg;
 class Lemme;
 class Radical;
 class Desinence;
+class Modele;
 
 /**
  * @brief structure pour stocker le résultat d'une lemmatisation
@@ -48,23 +41,22 @@ class Desinence;
  * Cette structure groupe la forme avec quantités, un éventuel suffixe
  * et l'analyse morphologique associée.
  */
-typedef struct
-{
-    QString grq; /*!< la forme avec quantités */
-    int morpho; /*!< l'analyse morphologique (entier) */
-    QString sufq; /*!< l'éventuel suffixe avec quantités */
-} SLem;
+struct SLem {
+    std::string grq; /*!< la forme avec quantités */
+    int morpho;      /*!< l'analyse morphologique (entier) */
+    std::string sufq; /*!< l'éventuel suffixe avec quantités */
+};
 
 /**
  * @brief Une MapLem regroupe par lemme les résultats d'une lemmatisation
  *
- * Il s'agit d'une QMap qui associe le pointeur (clef) vers un objet Lemme
+ * Il s'agit d'une map qui associe le pointeur (clef) vers un objet Lemme
  * à une liste (valeur) de SLem qui contiennent chacun un résultat de
  * lemmatisation et d'analyse.
  * C'est donc un moyen simple de regrouper, par lemme,
  * les différentes analyses possibles d'une forme.
  */
-typedef QMap<Lemme*, QList<SLem> > MapLem;
+typedef std::map<Lemme *, std::vector<SLem>> MapLem;
 
 /**
  * @brief ModLem est une variante de MapLem pour l'identification des formes inconnues.
@@ -78,15 +70,15 @@ typedef QMap<Lemme*, QList<SLem> > MapLem;
  * les identifications liées au même modèle de formes différentes
  * avec le même supposé radical.
  */
-typedef QMap<Modele*, QList<SLem> > ModLem;
+typedef std::map<Modele *, std::vector<SLem>> ModLem;
 
 /**
  * @brief Une Reglep regroupe une expression rationnelle et la chaine de remplacement
  *
  * Une liste de telles Reglep permet de faire des remplacements à la chaine.
- * Utilisée dans LemCore::transfMed et Scandeur::parPos
+ * Utilisée dans LemCore::transfMed
  */
-typedef QPair<QRegExp, QString> Reglep;
+typedef std::pair<std::regex, std::string>    Reglep;
 
 /**
  * @brief La classe LemCore est le noyau de lemmatisation
@@ -108,178 +100,135 @@ typedef QPair<QRegExp, QString> Reglep;
  * les diverses transformations qu'il a pu subir.
  * Elle appelle LemCore::lemmatise qui lemmatise la forme
  * sans transformation.
- *
- * \todo Il manque un lexique personnel dans Collatinus 11.
- * C'est en principe résolu (en grand) avec Collatinus 12.
- *
- * \todo La gestion des formes non-reconnues est aussi un peu sommaire.
- * Dans la lemmatisation d'un texte, les formes non-reconnues
- * sont juste groupées à la fin de la liste (si l'option
- * correspondante est validée).
- * Dans la scansion, on marque la quantité des syllabes
- * lorsqu'elle est déterminable par position.
- * Dans le tagueur, les mots non-reconnus sont ignorés...
- * Je ne sais pas au juste comment gérer ça.
- * En particulier, on ne peut pas le faire sur une forme isolée.
- * Dans un texte, si plusieurs mots ne sont pas reconnus
- * qui commencent avec un même potentiel radical,
- * on peut avoir une piste intéressante pour déterminer
- * un paradigme et voir si toutes ces formes peuvent
- * conduire à un lemme plausible (difficile pour la 3e déclinaison).
- * Commencer par se faire une idée de la fréquence d'utilisation
- * des diverses désinences ?
  */
-class LemCore : public QObject
+class LemCore
 {
-    Q_OBJECT
-
    private:
     // fonction d'initialisation
     void ajAssims();
     void ajAbrev();
-    /*! Liste des abréviations, voir LemCore::ajAbr */
-    QStringList abr;
-    // Pour avoir une liste d'abréviation éditable...
     void ajContractions();
-    int  aRomano(QString f);
+    int  aRomano(const std::string &f);
     void lisIrreguliers();
-    void lisFichierLexique(QString filepath);
+    void lisFichierLexique(const std::string &filepath);
     void lisLexique();
     void lisExtension();
     void lisModeles();
-    void lisMorphos(QString lang);
+    void lisMorphos(const std::string &lang);
     void lisTraductions(bool base, bool extension);
-    // variables et utils
+    void lisTags(bool tout = false);
+    void lisTransfMed();
+    std::string transfMed(const std::string &f, bool rad = false);
+    std::string decontracte(const std::string &d);
+
+    /*! Liste des abréviations, voir LemCore::ajAbr */
+    std::vector<std::string> abr;
     /*! Association des préfixes assimilés et non-assimilés sans quantité */
-    QMap<QString, QString> assims;
+    std::map<std::string, std::string> assims;
     /*! Association des préfixes assimilés et non-assimilés avec quantités */
-    QMap<QString, QString> assimsq;
+    std::map<std::string, std::string> assimsq;
     /*! Association des formes contractées et non-contractées */
-    QMap<QString, QString> _contractions;
+    std::map<std::string, std::string> _contractions;
     /*! Liste des désinences avec forme (clef) et pointeur (valeur) */
-    QMultiMap<QString, Desinence *> _desinences;
-    QString decontracte(QString d);
-    QMultiMap<QString, Irreg *> _irregs;
+    std::multimap<std::string, Desinence *> _desinences;
+    std::multimap<std::string, Irreg *> _irregs;
     /*! Liste des langues cibles en forme abrégée (clef) et longue (valeur) */
-    QMap<QString, QString> _cibles;
+    std::map<std::string, std::string> _cibles;
     /*! Liste des lemmes avec forme (clef) et pointeur (valeur) */
-    QMap<QString, Lemme *> _lemmes;
+    std::map<std::string, Lemme *> _lemmes;
     /*! Liste des modèles avec nom (clef) et pointeur (valeur) */
-    QMap<QString, Modele *> _modeles;
+    std::map<std::string, Modele *> _modeles;
     /*! Liste des analyses morphologiques avec langue (clef) et liste lisible (valeur) */
-    QMap<QString,QStringList> _morphos;
+    std::map<std::string, std::vector<std::string>> _morphos;
     /*! Liste des cas avec langue (clef) et liste lisible (valeur) */
-    QMap<QString,QStringList> _cas;
+    std::map<std::string, std::vector<std::string>> _cas;
     /*! Liste des genres avec langue (clef) et liste lisible (valeur) */
-    QMap<QString,QStringList> _genres;
+    std::map<std::string, std::vector<std::string>> _genres;
     /*! Liste des nombres avec langue (clef) et liste lisible (valeur) */
-    QMap<QString,QStringList> _nombres;
+    std::map<std::string, std::vector<std::string>> _nombres;
     /*! Liste des temps avec langue (clef) et liste lisible (valeur) */
-    QMap<QString,QStringList> _temps;
+    std::map<std::string, std::vector<std::string>> _temps;
     /*! Liste des modes avec langue (clef) et liste lisible (valeur) */
-    QMap<QString,QStringList> _modes;
+    std::map<std::string, std::vector<std::string>> _modes;
     /*! Liste des voix avec langue (clef) et liste lisible (valeur) */
-    QMap<QString,QStringList> _voix;
+    std::map<std::string, std::vector<std::string>> _voix;
     /*! Liste des autres mots-clefs avec langue (clef) et liste lisible (valeur) */
-    QMap<QString,QStringList> _motsClefs;
+    std::map<std::string, std::vector<std::string>> _motsClefs;
     // Les morphos doivent pouvoir être données en anglais !
     /*! Liste des radicaux avec forme (clef) et pointeur (valeur) */
-    QMultiMap<QString, Radical *> _radicaux;
+    std::multimap<std::string, Radical *> _radicaux;
     /*! Liste des méta-variables du fichier modeles.la avec nom (clef) et liste de désinences (valeur) */
-    QMap<QString, QString> _variables;
-
+    std::map<std::string, std::string> _variables;
     /*! Liste de règles pour transformer les graphies classiques en graphies médiévales */
-    QList<Reglep> _reglesMed; // Règles de transformation entre graphies classique et médiévale
-    void lisTransfMed();
-    QString transfMed(QString f, bool rad=false); // Exactement comme parPos, mais pour les transformations médiévales
+    std::vector<Reglep> _reglesMed;
     /*! Booléen pour traiter les graphies médiévales */
-    bool _medieval; // Au cas où j'arrive avec le même code à traiter les deux cas.
+    bool _medieval;
     /*! Associe une graphie médiévale (clef) à une graphie classique (valeur) pour une désinence */
-    QMap<QString, QString> _desMed;
+    std::map<std::string, std::string> _desMed;
     /*! Associe une graphie médiévale (clef) à une graphie classique (valeur) pour un irrégulier */
-    QMap<QString, QString> _irrMed;
+    std::map<std::string, std::string> _irrMed;
     /*! Associe une graphie médiévale (clef) à une graphie classique (valeur) pour un radical */
-    QMultiMap<QString, QString> _radMed;
-
+    std::multimap<std::string, std::string> _radMed;
     /*! Option indiquant le chargement de l'extension du lexique, voir LemCore::setExtension.*/
-    bool _extension; // = false;
+    bool _extension;
     /*! La langue choisie, voir LemCore::setCible */
-    QString _cible;  // langue courante, 2 caractères ou plus
-
+    std::string _cible;
     /*! Nombre d'occurrences du tag dans le corpus du LASLA */
-    QMap<QString, int> _tagOcc; // Nombre d'occurrences du tag.
+    std::map<std::string, int> _tagOcc;
     /*! Nombre d'occurrences du POS (1er caractère du tag) dans le corpus du LASLA */
-    QMap<QString, int> _tagTot; // Nombre total en fonction du premier caractère du tag.
+    std::map<std::string, int> _tagTot;
     /*! Nombre d'occurrences du trigramme dans le corpus du LASLA */
-    QMap<QString, int> _trigram; // Nombre d'occurrences des séquences de 3 tags.
-    void lisTags(bool tout = false);
-
+    std::map<std::string, int> _trigram;
     /*! Le nom du répertoire contenant les données. */
-    QString _resDir; // Le chemin du répertoire de ressources
+    std::string _resDir;
     /*! Booléen indiquant si l'extension du lexique a été chargée */
-    bool _extLoaded; // = true après chargement de l'extension
-    // Lorsque j'ai chargé l'extension, je dois pouvoir ignorer les analyses qui en viennent.
-//    bool _nbrLoaded; // Si les nombres ont été chargés, je dois les effacer avant de les charger à nouveau.
+    bool _extLoaded;
 
    public:
-    LemCore(QObject *parent = 0, QString resDir="");
-    bool estAbr(QString m);
-    // Pour remplacer Ch::abrev.contains(m) avec la liste des abréviations chargées.
+    explicit LemCore(const std::string &resDir = "");
+    void setResourceDir(const std::string &path);
+    bool estAbr(const std::string &m);
     void ajDesinence(Desinence *d);
-//    void ajModele(Modele *m);
     void ajRadicaux(Lemme *l);
-    QString assim(QString a);
-    QString assimq(QString a);
-    QMap<QString, QString> cibles();
-    QString desassim(QString a);
-    QString desassimq(QString a);
-//    static QString deramise(QString r);
-    static bool estRomain(QString f);
-    bool inv(Lemme *l, const MapLem ml);
-    MapLem lemmatise(QString f);  // lemmatise une forme
-    ModLem inconnue(QString f);  // tente d'identifier une forme inconnue.
-    // lemmatiseM lemmatise une forme en contexte
-    //MapLem lemmatiseM(QString f, bool debPhr = true);
-    MapLem lemmatiseM(QString f, bool debPhr = true, int etape  =0);
-    Lemme *lemme(QString l);
-    // lemmes(ml) renvoie la liste des graphies des lemmes
-    int nbOcc(QString l);
-    QStringList lemmes(MapLem ml);
-    QStringList lignesFichier(QString nf);
-    // Lit les lignes d'un fichier. Est devenu public.
-    Modele *modele(QString m);
-    QString morpho(int m);
-    // QStringList           suffixes;
+    std::string assim(const std::string &a);
+    std::string assimq(const std::string &a);
+    std::map<std::string, std::string> cibles();
+    std::string desassim(const std::string &a);
+    std::string desassimq(const std::string &a);
+    static bool estRomain(const std::string &f);
+    bool inv(Lemme *l, const MapLem &ml);
+    MapLem lemmatise(const std::string &f);
+    ModLem inconnue(const std::string &f);
+    MapLem lemmatiseM(const std::string &f, bool debPhr = true, int etape = 0);
+    Lemme *lemme(const std::string &l);
+    int nbOcc(const std::string &l);
+    std::vector<std::string> lemmes(MapLem ml);
+    std::vector<std::string> lignesFichier(const std::string &nf);
+    Modele *modele(const std::string &m);
+    std::string morpho(int m);
     /*! Association des suffixes sans et avec quantités */
-    QMap<QString, QString> suffixes;
-    QString variable(QString v);
-    // Lire un fichier de césures étymologiques (non-phonétiques)
-    void lireHyphen (QString fichierHyphen);
+    std::map<std::string, std::string> suffixes;
+    std::string variable(const std::string &v);
+    void lireHyphen(const std::string &fichierHyphen);
 
-    // Pour l'internationalisation
-    QString cas(int i);
-    QString genre(int i);
-    QString nombre(int i);
-    QString temps(int i);
-    QString modes(int i);
-    QString voix(int i);
-    QString motsClefs(int i);
-
-    void setCible(QString c);
-    QString cible();
+    std::string cas(int i);
+    std::string genre(int i);
+    std::string nombre(int i);
+    std::string temps(int i);
+    std::string modes(int i);
+    std::string voix(int i);
+    std::string motsClefs(int i);
+    void setCible(const std::string &c);
+    std::string cible();
     bool optExtension();
-
-
-//    QString tagPhrase(QString phr);
-    QString tag(QString lp, int m);
-    QString tag(Lemme *l, int m);
-    int fraction(QString listTags);
-    int tagOcc(QString t);
-    int trigram(QString seq);
-
-   public slots:
     void setExtension(bool e);
     void setMedieval(bool e);
+
+    std::string tag(const std::string &lp, int m);
+    std::string tag(Lemme *l, int m);
+    int fraction(const std::string &listTags);
+    int tagOcc(const std::string &t);
+    int trigram(const std::string &seq);
 };
 
-#endif // LEMCORE_H
+#endif

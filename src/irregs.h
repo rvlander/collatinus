@@ -22,39 +22,30 @@
 #ifndef IRREGS_H
 #define IRREGS_H
 
-#include <QList>
-#include <QString>
-#include <QStringList>
-
-#include "lemCore.h"
+#include <string>
+#include <vector>
 #include "ch.h"
-#include "lemme.h"
-#include "modele.h"
-
-#include <QDebug>
 
 class LemCore;
 class Lemme;
 
-class Irreg : public QObject
+class Irreg
 {
-    Q_OBJECT
-
    private:
     bool _exclusif;
-    QString _gr;
-    QString _grq;
-    LemCore* _lemmat;
-    Lemme* _lemme;
-    QList<int> _morphos;
+    std::string _gr;
+    std::string _grq;
+    LemCore *_lemmat;
+    Lemme *_lemme;
+    std::vector<int> _morphos;
 
    public:
-    Irreg(QString l, QObject* parent = 0);
+    Irreg(const std::string &l, LemCore *lemmat);
     bool exclusif();
-    QString gr();
-    QString grq();
-    Lemme* lemme();
-    QList<int> morphos();
+    std::string gr();
+    std::string grq();
+    Lemme *lemme();
+    std::vector<int> morphos();
 };
 
 #endif

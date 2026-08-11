@@ -22,16 +22,11 @@
 #ifndef MODELE_H
 #define MODELE_H
 
-#include <QList>
-#include <QMultiMap>
-#include <QString>
-#include <QStringList>
-#include <QtCore>
-
-#include <QDebug>
-
+#include <string>
+#include <vector>
+#include <map>
 #include "ch.h"
-#include "lemCore.h"
+#include "string_utils.h"
 
 class LemCore;
 class Modele;
@@ -39,64 +34,60 @@ class Modele;
 /**
  * @brief La classe Desinence décrit les désinences associées aux modèles
  */
-class Desinence : public QObject
+class Desinence
 {
-    Q_OBJECT
    private:
-    QString _gr; /*!< voir Desinence::gr */
-    QString _grq; /*!< voir Desinence::grq */
-    int     _morpho; /*!< voir Desinence::morphoNum */
-    Modele *_modele; /*!< voir Desinence::modele */
-    int     _numR; /*!< voir Desinence::numRad */
-    int     _rarete; /*!< voir Desinence::rarete */
+    std::string _gr;  /*!< voir Desinence::gr */
+    std::string _grq; /*!< voir Desinence::grq */
+    int _morpho;      /*!< voir Desinence::morphoNum */
+    Modele *_modele;  /*!< voir Desinence::modele */
+    int _numR;        /*!< voir Desinence::numRad */
+    int _rarete;      /*!< voir Desinence::rarete */
 
    public:
-    Desinence(QString d, int morph, int nr, Modele *parent = 0);
-    QString gr();
-    QString grq();
-    int     rarete();
+    Desinence(const std::string &d, int morph, int nr, Modele *parent = nullptr);
+    std::string gr();
+    std::string grq();
+    int rarete();
     Modele *modele();
-    int     morphoNum();
-    int     numRad();
-    void    setModele(Modele *m);
+    int morphoNum();
+    int numRad();
+    void setModele(Modele *m);
 };
 
 /**
  * @brief La classe Modele contient les désinences associées aux paradigmes de flexion
  */
-class Modele : public QObject
+class Modele
 {
-    Q_OBJECT
    private:
-    QList<int> _absents; /*!< Liste des morphos absentes du modèle. */
-    QStringList static const cles; /*!<  ensemble des clefs utilisées dans la descriptions des modèles */
-    QMultiMap<int, Desinence *> _desinences; /*!< Liste des désinences du modèle. */
-    QMap<int, QString> _genRadicaux; /*!< Générateurs des radicaux du modèle. */
-    QString _gr; /*!< Nom du modèle. */
-//    QString _grq;
-    LemCore *_lemCore; /*!< Un pointeur vers le noyau de lemmatisation. */
-    Modele *_pere; /*!< Un pointeur vers le père du modèle. */
-    QChar   _pos; /*!< POS associé au modèle. */
-    QString _suf; /*!< Suffixe à ajouter aux désinences du père. */
-    int _nbr; /*!< Le nombre d'occurrences du modèle dans le corpus du LASLA. */
+    std::vector<int> _absents;       /*!< Liste des morphos absentes du modèle. */
+    static const std::vector<std::string> cles; /*!< ensemble des clefs utilisées dans la descriptions des modèles */
+    std::multimap<int, Desinence *> _desinences; /*!< Liste des désinences du modèle. */
+    std::map<int, std::string> _genRadicaux; /*!< Générateurs des radicaux du modèle. */
+    std::string _gr;       /*!< Nom du modèle. */
+    LemCore *_lemCore;     /*!< Un pointeur vers le noyau de lemmatisation. */
+    Modele *_pere;         /*!< Un pointeur vers le père du modèle. */
+    char _pos;             /*!< POS associé au modèle. */
+    std::string _suf;      /*!< Suffixe à ajouter aux désinences du père. */
+    int _nbr;              /*!< Le nombre d'occurrences du modèle dans le corpus du LASLA. */
 
    public:
-    Modele(QStringList ll, LemCore *parent = 0);
-    bool               absent(int a);
-    QList<int>         absents();
-    QList<int>         clesR();
-    Desinence         *clone(Desinence *d);
-    bool               deja(int m);
-    QList<Desinence *> desinences(int d);
-    QList<Desinence *> desinences();
-    bool               estUn(QString m);
-    QString            genRadical(int r);
-    QString            gr();
-//    QString            grq();
-    static QList<int>  listeI(QString l);
-    QList<int>         morphos();
-    QChar              pos();
-    int                nbr();
+    Modele(std::vector<std::string> ll, LemCore *parent = nullptr);
+    bool absent(int a);
+    std::vector<int> absents();
+    std::vector<int> clesR();
+    Desinence *clone(Desinence *d);
+    bool deja(int m);
+    std::vector<Desinence *> desinences(int d);
+    std::vector<Desinence *> desinences();
+    bool estUn(const std::string &m);
+    std::string genRadical(int r);
+    std::string gr();
+    static std::vector<int> listeI(const std::string &l);
+    std::vector<int> morphos();
+    char pos();
+    int nbr();
 };
 
 #endif
